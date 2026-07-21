@@ -34,6 +34,8 @@
               <option value="very high pitch">Very high pitch</option>
             </select>
             <select id="narrator-accent" class="vc-select">
+              <option value="no accent">None (natural)</option>
+              <option value="hungarian accent">Hungarian</option>
               <option value="american accent">American</option>
               <option value="british accent" selected>British</option>
               <option value="australian accent">Australian</option>
@@ -83,6 +85,25 @@
               >Remove reference</button>
             </div>
             <div class="studio-note">Best results: a clean, single-speaker, 3–10 second clip in the target language.</div>
+          </div>
+          <div class="clone-section">
+            <label for="voice-preset-select">Saved voices</label>
+            <div class="reference-actions">
+              <select id="voice-preset-select" class="vc-select"></select>
+              <button class="btn btn-sm btn-primary" type="button" onclick="applyVoicePreset()">Apply to this book</button>
+              <button class="btn btn-sm btn-ghost" type="button" onclick="deleteVoicePreset()">Delete preset</button>
+            </div>
+            <div class="reference-actions">
+              <input id="voice-preset-name" class="vc-select" type="text" maxlength="80"
+                     placeholder="New preset name (e.g. Károly – warm male)">
+              <button class="btn btn-sm btn-ghost" type="button" onclick="saveVoicePreset()">Save current voice as preset</button>
+            </div>
+            <div class="studio-note" id="voice-preset-note">
+              Save stores the narrator's current reference WAV and transcript under a name.
+              Apply copies a saved voice onto this book's narrator; the book's generated
+              audio is cleared so it regenerates with the new voice. Deleting a preset
+              does not affect books already using it.
+            </div>
           </div>
         </div>
       </div>

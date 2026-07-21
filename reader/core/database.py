@@ -109,6 +109,15 @@ def init_db():
             cache_key     TEXT UNIQUE
         );
 
+        CREATE TABLE IF NOT EXISTS voice_presets (
+            id             INTEGER PRIMARY KEY AUTOINCREMENT,
+            name           TEXT NOT NULL UNIQUE,
+            ref_audio_path TEXT NOT NULL,
+            ref_audio_name TEXT,
+            ref_text       TEXT,
+            created_at     TEXT DEFAULT (datetime('now'))
+        );
+
         CREATE TABLE IF NOT EXISTS bookmarks (
             id            INTEGER PRIMARY KEY AUTOINCREMENT,
             book_id       INTEGER NOT NULL REFERENCES books(id) ON DELETE CASCADE,

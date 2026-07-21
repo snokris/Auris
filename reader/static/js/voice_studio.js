@@ -9,7 +9,12 @@ const previewAudio = document.getElementById("preview-audio");
 const GENDERS = ["male", "female"];
 const AGES = ["child", "teenager", "young adult", "middle-aged", "elderly"];
 const PITCHES = ["very low pitch", "low pitch", "moderate pitch", "high pitch", "very high pitch"];
+// "no accent" is a UI-only sentinel: it is offered in the selects but
+// stripped from the generated instruct so the model gets no accent hint.
+const NO_ACCENT = "no accent";
 const ACCENTS = [
+  NO_ACCENT,
+  "hungarian accent",
   "american accent",
   "british accent",
   "australian accent",
@@ -37,12 +42,14 @@ function parseInstruct(instruct) {
     gender: parts.find((part) => GENDERS.includes(part)) || "female",
     age: AGES.find((age) => parts.includes(age)) || "young adult",
     pitch: PITCHES.find((pitch) => parts.includes(pitch)) || "moderate pitch",
-    accent: ACCENTS.find((accent) => parts.includes(accent)) || "american accent",
+    accent: ACCENTS.find((accent) => parts.includes(accent)) || NO_ACCENT,
   };
 }
 
 function buildInstruct(gender, age, pitch, accent) {
-  return [gender, age, pitch, accent].join(", ");
+  return [gender, age, pitch, accent]
+    .filter((part) => part && part !== NO_ACCENT)
+    .join(", ");
 }
 
 function esc(value) {
@@ -66,7 +73,7 @@ function updateInstructPreview(charId) {
     document.getElementById(`g-${charId}`)?.value || "female",
     document.getElementById(`a-${charId}`)?.value || "young adult",
     document.getElementById(`p-${charId}`)?.value || "moderate pitch",
-    document.getElementById(`ac-${charId}`)?.value || "american accent"
+    document.getElementById(`ac-${charId}`)?.value || NO_ACCENT
   );
   const el = document.getElementById(`ins-${charId}`);
   if (el) el.textContent = instruct;
@@ -78,7 +85,7 @@ function getNarratorInstruct() {
     document.getElementById("narrator-gender")?.value || "male",
     document.getElementById("narrator-age")?.value || "elderly",
     document.getElementById("narrator-pitch")?.value || "low pitch",
-    document.getElementById("narrator-accent")?.value || "british accent"
+    document.getElementById("narrator-accent")?.value || NO_ACCENT
   );
 }
 
@@ -395,10 +402,103 @@ async function previewNarrator() {
   await previewAudio.play();
 }
 
+// ── Saved narrator voice presets ────────────────────────────────────────────
+
+async function loadVoicePresets() {
+  const select = document.getElementById("voice-preset-select");
+  if (!select) return;
+  try {
+    const presets = await fetch("/api/voice-presets").then((r) => r.json());
+    select.innerHTML = presets.length
+      ? presets
+          .map((p) => `<option value="${p.id}">${esc(p.name)}</option>`)
+          .join("")
+      : '<option value="">(no saved voices yet)</option>';
+    select.disabled = !presets.length;
+  } catch (error) {
+    select.innerHTML = '<option value="">(could not load presets)</option>';
+    select.disabled = true;
+  }
+}
+
+async function saveVoicePreset() {
+  const nameField = document.getElementById("voice-preset-name");
+  const name = (nameField?.value || "").trim();
+  if (!name) {
+    alert("Give the preset a name first.");
+    return;
+  }
+  const r = await fetch(`/api/voice-presets/from-narrator/${BOOK_ID}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name }),
+  });
+  const d = await r.json();
+  if (d.ok) {
+    if (nameField) nameField.value = "";
+    await loadVoicePresets();
+    const select = document.getElementById("voice-preset-select");
+    if (select) select.value = String(d.id);
+    flashSaved(document.getElementById("voice-preset-note"));
+  } else if (d.error) {
+    alert(`Could not save preset: ${d.error}`);
+  }
+}
+
+async function applyVoicePreset() {
+  const select = document.getElementById("voice-preset-select");
+  const presetId = Number(select?.value || 0);
+  if (!presetId) {
+    alert("No saved voice is selected.");
+    return;
+  }
+  const label = select.options[select.selectedIndex]?.textContent || "preset";
+  if (!confirm(`Apply "${label}" to this book's narrator? The book's generated audio will be cleared and regenerated with this voice.`)) {
+    return;
+  }
+  const r = await fetch(`/api/books/${BOOK_ID}/narrator-ref-audio/apply-preset`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ preset_id: presetId }),
+  });
+  const d = await r.json();
+  if (d.ok) {
+    narratorHasRefAudio = true;
+    narratorRefAudioName = d.ref_audio_name || label;
+    const refText = document.getElementById("narrator-ref-text");
+    if (refText) refText.value = d.ref_text || "";
+    syncNarratorRefUI();
+    flashSaved(document.getElementById("voice-preset-note"));
+  } else if (d.error) {
+    alert(`Could not apply preset: ${d.error}`);
+  }
+}
+
+async function deleteVoicePreset() {
+  const select = document.getElementById("voice-preset-select");
+  const presetId = Number(select?.value || 0);
+  if (!presetId) {
+    alert("No saved voice is selected.");
+    return;
+  }
+  const label = select.options[select.selectedIndex]?.textContent || "preset";
+  if (!confirm(`Delete the saved voice "${label}"? Books already using it keep their copy.`)) {
+    return;
+  }
+  const r = await fetch(`/api/voice-presets/${presetId}`, { method: "DELETE" });
+  const d = await r.json();
+  if (d.ok) {
+    await loadVoicePresets();
+  } else if (d.error) {
+    alert(`Could not delete preset: ${d.error}`);
+  }
+}
+
 document.querySelector('.preview-btn[data-char-id="narrator"]').onclick = previewNarrator;
 
 initNarratorControls();
 loadCharacters();
+loadVoicePresets();
 
 window.saveChar = saveChar;
 window.previewChar = previewChar;
@@ -409,3 +509,6 @@ window.removeNarratorRef = removeNarratorRef;
 window.saveNarrator = saveNarrator;
 window.loadRefText = loadRefText;
 window.loadNarratorRefText = loadNarratorRefText;
+window.saveVoicePreset = saveVoicePreset;
+window.applyVoicePreset = applyVoicePreset;
+window.deleteVoicePreset = deleteVoicePreset;

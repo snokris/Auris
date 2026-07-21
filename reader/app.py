@@ -5,6 +5,8 @@ Offline Ebook Reader — Flask application.
 import base64
 import logging
 import os
+import shutil
+import sqlite3
 import threading
 import uuid
 
@@ -31,6 +33,11 @@ app.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024  # 500 MB
 
 UPLOAD_DIR = os.path.join(os.path.dirname(__file__), 'uploads')
 os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+# Saved narrator voice presets (reference WAV + transcript pairs). Unlike the
+# per-book uploads above, these persist independently of any book.
+VOICE_PRESET_DIR = os.path.join(os.path.dirname(__file__), 'data', 'voice_presets')
+os.makedirs(VOICE_PRESET_DIR, exist_ok=True)
 
 tts = TTSEngineRouter()
 
@@ -954,6 +961,128 @@ def delete_narrator_ref_audio(book_id):
     _delete_file_if_exists(path)
     _clear_book_tts_segments(book_id)
     return jsonify({'ok': True, 'segments_cleared': True})
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# Voice presets (saved narrator voices)
+# ════════════════════════════════════════════════════════════════════════════
+
+
+@app.route('/api/voice-presets')
+def list_voice_presets():
+    with get_conn() as conn:
+        rows = conn.execute(
+            'SELECT id, name, ref_audio_name, ref_text, created_at '
+            'FROM voice_presets ORDER BY name COLLATE NOCASE'
+        ).fetchall()
+    return jsonify([
+        {
+            'id': row['id'],
+            'name': row['name'],
+            'ref_audio_name': row['ref_audio_name'],
+            'has_text': bool(row['ref_text']),
+            'created_at': row['created_at'],
+        }
+        for row in rows
+    ])
+
+
+@app.route('/api/voice-presets/from-narrator/<int:book_id>', methods=['POST'])
+def save_narrator_as_preset(book_id):
+    """Snapshot the book's current narrator reference (WAV + transcript)."""
+    body = request.get_json(force=True) or {}
+    name = str(body.get('name') or '').strip()
+    if not name:
+        return jsonify({'error': 'Preset name is required'}), 400
+    if len(name) > 80:
+        return jsonify({'error': 'Preset name is too long (max 80 characters)'}), 400
+
+    with get_conn() as conn:
+        row = conn.execute(
+            'SELECT narrator_ref_audio_path, narrator_ref_audio_name, '
+            'narrator_ref_text FROM books WHERE id=?',
+            (book_id,),
+        ).fetchone()
+    if not row:
+        return jsonify({'error': 'Book not found'}), 404
+    src = row['narrator_ref_audio_path']
+    if not src or not os.path.isfile(src):
+        return jsonify({
+            'error': 'This book has no narrator reference audio to save. '
+                     'Upload a reference WAV first.'
+        }), 400
+
+    dest = os.path.join(VOICE_PRESET_DIR, f'{uuid.uuid4().hex}.wav')
+    shutil.copyfile(src, dest)
+    try:
+        with get_conn() as conn:
+            cur = conn.execute(
+                'INSERT INTO voice_presets (name, ref_audio_path, ref_audio_name, ref_text) '
+                'VALUES (?, ?, ?, ?)',
+                (name, dest, row['narrator_ref_audio_name'], row['narrator_ref_text']),
+            )
+            preset_id = cur.lastrowid
+    except sqlite3.IntegrityError:
+        _delete_file_if_exists(dest)
+        return jsonify({'error': f'A preset named "{name}" already exists.'}), 409
+    return jsonify({'ok': True, 'id': preset_id, 'name': name})
+
+
+@app.route('/api/books/<int:book_id>/narrator-ref-audio/apply-preset', methods=['POST'])
+def apply_voice_preset(book_id):
+    """Copy a saved preset onto the book's narrator voice (clone source)."""
+    body = request.get_json(force=True) or {}
+    preset_id = body.get('preset_id')
+    with get_conn() as conn:
+        preset = conn.execute(
+            'SELECT * FROM voice_presets WHERE id=?', (preset_id,)
+        ).fetchone()
+        prev = conn.execute(
+            'SELECT narrator_ref_audio_path, narrator_ref_text FROM books WHERE id=?',
+            (book_id,),
+        ).fetchone()
+    if not preset:
+        return jsonify({'error': 'Preset not found'}), 404
+    if not prev:
+        return jsonify({'error': 'Book not found'}), 404
+    if not os.path.isfile(preset['ref_audio_path']):
+        return jsonify({'error': 'The preset audio file is missing on disk.'}), 410
+
+    if prev['narrator_ref_audio_path']:
+        tts.invalidate_voice_prompt(
+            prev['narrator_ref_audio_path'], prev['narrator_ref_text']
+        )
+    path = os.path.join(UPLOAD_DIR, f'narrator_ref_{book_id}.wav')
+    shutil.copyfile(preset['ref_audio_path'], path)
+    display_name = preset['ref_audio_name'] or f"{preset['name']}.wav"
+    with get_conn() as conn:
+        conn.execute(
+            'UPDATE books SET narrator_ref_audio_path=?, narrator_ref_audio_name=?, '
+            'narrator_ref_text=? WHERE id=?',
+            (path, display_name, preset['ref_text'], book_id),
+        )
+    tts.invalidate_voice_prompt(path, preset['ref_text'] or None)
+    _clear_book_tts_segments(book_id)
+    return jsonify({
+        'ok': True,
+        'preset': preset['name'],
+        'ref_audio_name': display_name,
+        'ref_text': preset['ref_text'] or '',
+    })
+
+
+@app.route('/api/voice-presets/<int:preset_id>', methods=['DELETE'])
+def delete_voice_preset(preset_id):
+    """Remove a preset. Books that already applied it keep their own copy."""
+    with get_conn() as conn:
+        row = conn.execute(
+            'SELECT ref_audio_path FROM voice_presets WHERE id=?', (preset_id,)
+        ).fetchone()
+        if not row:
+            return jsonify({'error': 'Not found'}), 404
+        conn.execute('DELETE FROM voice_presets WHERE id=?', (preset_id,))
+    _delete_file_if_exists(row['ref_audio_path'])
+    return jsonify({'ok': True})
 
 
 # ════════════════════════════════════════════════════════════════════════════
