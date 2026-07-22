@@ -2,7 +2,7 @@
 
 Teljesen **lokális, ingyenes hangoskönyvkészítő**: EPUB-, PDF- vagy TXT-könyvből felolvasott hangoskönyvet készít (WAV/MP3 + felirat), internetkapcsolat és API-kulcsok nélkül. Kiemelt **magyar nyelvi támogatással** — automatikus magyar nyelvfelismerés, „I. FEJEZET” típusú fejezetdetektálás, magyar párbeszédkezelés, hangklónozás magyar referenciahangból.
 
-Ez a repó [mp3pintyo/Auris](https://github.com/mp3pintyo/Auris) forkja. Az eredeti projekt a szerző munkája és érdeme; ez a változat elsősorban **Apple Silicon (macOS) támogatással** és néhány saját minőségjavító funkcióval egészíti ki. Windows- és Linux-telepítéshez az eredeti repó útmutatója az irányadó.
+Ez a repó a [mp3pintyo/Auris](https://github.com/mp3pintyo/Auris) forkja, amely maga is az eredeti [nikhilprasanth/Auris](https://github.com/nikhilprasanth/Auris) projektre épül. A származási lánc: az **eredeti Auris** (nikhilprasanth) adja az OmniVoice-alapú hangoskönyvolvasó alapot; **mp3pintyo forkja** egészítette ki a Higgs TTS 3 motorral és a kiterjedt magyar nyelvi támogatással; ez a változat pedig mindezt **Apple Silicon (macOS) támogatással** és néhány saját minőségjavító funkcióval bővíti. Windows- és Linux-telepítéshez a mp3pintyo-repó útmutatója az irányadó.
 
 ## Képernyőképek
 
@@ -80,4 +80,4 @@ A `dev` ág a mindig működő, összefésült állapot; minden téma saját `fe
 
 ## Köszönet
 
-Az alapprojektért köszönet **mp3pintyo**-nak, a TTS-motorokért a [k2-fsa/OmniVoice](https://github.com/k2-fsa/OmniVoice) és a [Boson AI](https://huggingface.co/bosonai) csapatának. A fork licence az eredeti projektét követi (lásd `LICENSE`).
+Az eredeti Auris projektért köszönet **nikhilprasanth**-nak, a Higgs-integrációért és a magyar nyelvi támogatásért **mp3pintyo**-nak, a TTS-motorokért pedig a [k2-fsa/OmniVoice](https://github.com/k2-fsa/OmniVoice) és a [Boson AI](https://huggingface.co/bosonai) csapatának. A fork licence az eredeti projektét követi (lásd `LICENSE`).
