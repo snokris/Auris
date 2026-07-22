@@ -87,14 +87,17 @@ def main() -> None:
         device = "cuda"
         dtype = torch.bfloat16
     elif getattr(torch.backends, "mps", None) is not None and torch.backends.mps.is_available():
-        # Apple Silicon (Metal). float32 by default: bfloat16 audibly clips
-        # sentence onsets on MPS (verified on M-series hardware).
-        # Set AURIS_MPS_DTYPE=bf16 to trade quality for speed.
+        # Apple Silicon (Metal). Unlike OmniVoice (whose MPS default is
+        # float32 because bfloat16 clipped sentence onsets there), Higgs
+        # was trained and shipped in bfloat16 — it is the model's native
+        # dtype and roughly halves memory and doubles throughput on Metal.
+        # Set AURIS_HIGGS_MPS_DTYPE=fp32 if you hear artifacts.
         device = "mps"
         dtype = (
-            torch.bfloat16
-            if os.environ.get("AURIS_MPS_DTYPE", "").lower() in {"bf16", "bfloat16"}
-            else torch.float32
+            torch.float32
+            if os.environ.get("AURIS_HIGGS_MPS_DTYPE", "").lower()
+            in {"fp32", "float32"}
+            else torch.bfloat16
         )
     else:
         device = "cpu"

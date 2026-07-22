@@ -256,9 +256,12 @@ class HiggsTTSEngine:
             self._ready = True
             self.model = self._worker  # resident-worker marker used by lifecycle code
             log.info(
-                "Higgs TTS ready (%s, Transformers %s, model seed=%s, audio head shared=%s).",
+                "Higgs TTS ready (%s, Transformers %s, device=%s, dtype=%s, "
+                "model seed=%s, audio head shared=%s).",
                 source,
                 response.get("transformers", "?"),
+                response.get("device", "?"),
+                response.get("dtype", "?"),
                 response.get("model_seed", "?"),
                 response.get("audio_head_shared", False),
             )
