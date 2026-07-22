@@ -599,7 +599,8 @@ class TTSEngine:
         self._generation_stream = None
         # Whisper ASR (word-timestamp aligned splitting of coalesced units).
         self._asr_load_lock = threading.Lock()
-        self._asr_unavailable = False
+        self._asr_loaded_name: str | None = None
+        self._asr_failed_name: str | None = None
         os.makedirs(AUDIO_CACHE_DIR, exist_ok=True)
         os.makedirs(VOICE_REF_DIR, exist_ok=True)
         os.makedirs(VOICE_PROMPT_DIR, exist_ok=True)
@@ -853,27 +854,42 @@ class TTSEngine:
         """Lazily load OmniVoice's bundled Whisper ASR pipeline.
 
         Used for word-timestamp alignment when splitting coalesced units.
-        The first call downloads the ASR model into the HF cache.
+        Honors the ``tts_align_asr_model`` setting: changing it in Settings
+        reloads the ASR model without restarting the app. The first use of
+        a model downloads it into the HF cache.
         """
         model = self.model
         if model is None:
             return None
+        try:
+            from core.settings import get as _settings_get
+
+            wanted = str(
+                _settings_get("tts_align_asr_model", "openai/whisper-small")
+            ).strip() or "openai/whisper-small"
+        except Exception:
+            wanted = "openai/whisper-small"
+        if getattr(self, "_asr_failed_name", None) == wanted:
+            return None
         pipe = getattr(model, "_asr_pipe", None)
-        if pipe is not None:
+        if pipe is not None and getattr(self, "_asr_loaded_name", None) == wanted:
             return pipe
         with self._asr_load_lock:
             pipe = getattr(model, "_asr_pipe", None)
-            if pipe is not None:
+            if pipe is not None and getattr(self, "_asr_loaded_name", None) == wanted:
                 return pipe
             try:
                 log.info(
-                    "Loading Whisper ASR for aligned segment splitting "
-                    "(first run downloads the model)…"
+                    "Loading Whisper ASR (%s) for aligned segment splitting "
+                    "(first use downloads the model)…",
+                    wanted,
                 )
-                model.load_asr_model()
+                model.load_asr_model(model_name=wanted)
+                self._asr_loaded_name = wanted
+                self._asr_failed_name = None
             except Exception as exc:
                 log.warning("Whisper ASR load failed (%s); aligned split off.", exc)
-                self._asr_unavailable = True
+                self._asr_failed_name = wanted
                 return None
         return getattr(model, "_asr_pipe", None)
 
@@ -884,8 +900,6 @@ class TTSEngine:
         language: str | None,
     ) -> list["np.ndarray"] | None:
         """Word-timestamp based split of a coalesced unit; None = fall back."""
-        if getattr(self, "_asr_unavailable", False):
-            return None
         try:
             from core.settings import get as _settings_get
 

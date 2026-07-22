@@ -8,6 +8,27 @@
   </div>
 
   <div class="studio-narrator">
+    <div class="studio-section-title">Narration mode</div>
+    <div class="char-list">
+      <div class="character-card narrator-card">
+        <div class="char-avatar narrator-avatar">1</div>
+        <div class="char-details">
+          <span class="char-name">Single narrator</span>
+          <label class="narrator-mode-row">
+            <input type="checkbox" id="single-narrator-mode">
+            <span>Use this narrator for the whole book</span>
+          </label>
+          <div class="studio-note">
+            When enabled, the narrator voice reads every line, character detection
+            is turned off, and already detected characters are forgotten for this
+            book. Turning it off runs character detection again.
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="studio-narrator">
     <div class="studio-section-title">Narrator</div>
     <div class="char-list">
       <div class="character-card narrator-card">
@@ -45,13 +66,6 @@
               <option value="korean accent">Korean</option>
               <option value="japanese accent">Japanese</option>
             </select>
-          </div>
-          <label class="narrator-mode-row">
-            <input type="checkbox" id="single-narrator-mode">
-            <span>Use this narrator for the whole book</span>
-          </label>
-          <div class="studio-note">
-            When enabled, playback and export use the narrator voice for every line.
           </div>
           <div class="char-card-footer">
             <span class="instruct-preview" id="narrator-instruct-preview"></span>

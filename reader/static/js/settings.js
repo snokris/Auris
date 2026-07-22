@@ -104,6 +104,18 @@ async function loadSettings() {
       coalSelect.value = coal;
     }
   }
+  const splitMode = String(_settings.tts_split_mode ?? 'align');
+  const splitSelect = document.getElementById('tts-split-mode');
+  if (splitSelect) {
+    splitSelect.value = [...splitSelect.options].some(o => o.value === splitMode)
+      ? splitMode : 'align';
+  }
+  const alignModel = String(_settings.tts_align_asr_model ?? 'openai/whisper-small');
+  const alignSelect = document.getElementById('tts-align-asr-model');
+  if (alignSelect) {
+    alignSelect.value = [...alignSelect.options].some(o => o.value === alignModel)
+      ? alignModel : 'openai/whisper-small';
+  }
   const accel = String(_settings.tts_accel ?? 'auto');
   const accelSelect = document.getElementById('tts-accel');
   if (accelSelect) {
@@ -477,6 +489,9 @@ async function saveSettings() {
     tts_batch_size:    parseInt(document.getElementById('tts-batch-size').value, 10) || 0,
     tts_coalesce_chars: parseInt(document.getElementById('tts-coalesce-chars').value, 10) || 0,
     tts_accel:         document.getElementById('tts-accel')?.value || 'auto',
+    tts_split_mode:    document.getElementById('tts-split-mode')?.value || 'align',
+    tts_align_asr_model: document.getElementById('tts-align-asr-model')?.value
+                         || 'openai/whisper-small',
     tts_export_workers: parseInt(
       document.getElementById('tts-export-workers')?.value || '0', 10
     ) || 0,

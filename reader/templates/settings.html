@@ -340,6 +340,33 @@
       </span>
     </div>
     <div class="setting-row">
+      <label>Split coalesced audio</label>
+      <select id="tts-split-mode" class="select-input">
+        <option value="align">Aligned — Whisper word timestamps (recommended)</option>
+        <option value="chars">Chars — proportional split (legacy)</option>
+      </select>
+      <span class="muted" style="font-size:.78rem">
+        How merged same-voice audio is cut back into per-sentence clips.
+        <strong>Aligned</strong> places every cut in the pause between words, which
+        removes clipped sentence endings and cross-boundary word fragments.
+      </span>
+    </div>
+    <div class="setting-row">
+      <label>Alignment ASR model</label>
+      <select id="tts-align-asr-model" class="select-input">
+        <option value="openai/whisper-tiny">whisper-tiny — fastest</option>
+        <option value="openai/whisper-base">whisper-base</option>
+        <option value="openai/whisper-small">whisper-small — recommended</option>
+        <option value="openai/whisper-medium">whisper-medium</option>
+        <option value="openai/whisper-large-v3-turbo">whisper-large-v3-turbo — most accurate, slowest</option>
+      </select>
+      <span class="muted" style="font-size:.78rem">
+        Whisper model used only to time the words for aligned splitting — the text
+        itself is already known, so a small model is normally enough. The selected
+        model downloads on first use and reloads without restarting the app.
+      </span>
+    </div>
+    <div class="setting-row">
       <label>GPU acceleration</label>
       <select id="tts-accel" class="select-input">
         <option value="auto">Auto — best available</option>

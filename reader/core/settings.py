@@ -97,6 +97,11 @@ DEFAULTS: dict = {
     # chars = legacy proportional character-weight split.
     'tts_split_mode': 'align',
 
+    # ASR model used ONLY for word-timestamp alignment. The member texts are
+    # already known, so a small model is enough — the DP aligner tolerates
+    # recognition errors. whisper-small is ~10x faster than large-v3-turbo.
+    'tts_align_asr_model': 'openai/whisper-small',
+
     # OmniVoice iterative decoding steps for playback and export.
     # Higher = better quality but slower. 16 is a good default; 32 is max quality.
     'tts_num_step': 16,

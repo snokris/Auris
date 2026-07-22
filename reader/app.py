@@ -370,7 +370,12 @@ def import_book():
     detection_mode = str(
         detection_config.get('character_detection_mode', 'legacy') or 'legacy'
     ).lower()
-    analysis_status = 'queued' if detection_mode == 'llm' else 'running'
+    single_narrator_default = bool(app_settings.get('single_narrator_mode', False))
+    if single_narrator_default:
+        # One narrator reads everything: character detection is skipped.
+        analysis_status = 'complete'
+    else:
+        analysis_status = 'queued' if detection_mode == 'llm' else 'running'
 
     with get_conn() as conn:
         cur = conn.execute(
@@ -394,18 +399,25 @@ def import_book():
                  ch['content'], ch['word_count'])
             )
 
-    # Import-time local LLM analysis owns the available GPU memory. Release TTS
-    # before the worker starts (and before it waits behind another queued book).
-    if detection_mode == 'llm':
-        _character_analysis_reserve()
-        tts.unload()
+    if single_narrator_default:
+        _set_character_analysis_status(
+            book_id, 'complete',
+            'Single narrator mode — character detection skipped.',
+        )
+    else:
+        # Import-time local LLM analysis owns the available GPU memory. Release
+        # TTS before the worker starts (and before it waits behind another
+        # queued book).
+        if detection_mode == 'llm':
+            _character_analysis_reserve()
+            tts.unload()
 
-    # Detect characters / attribute dialogue in the background.
-    threading.Thread(
-        target=_detect_characters,
-        args=(book_id, data, detection_mode, detection_config),
-        daemon=True,
-    ).start()
+        # Detect characters / attribute dialogue in the background.
+        threading.Thread(
+            target=_detect_characters,
+            args=(book_id, data, detection_mode, detection_config),
+            daemon=True,
+        ).start()
 
     return jsonify({'book_id': book_id, 'title': data['title'], 'chapters': len(chapters)})
 
@@ -821,6 +833,90 @@ def update_narrator(book_id):
         'single_narrator_mode': single_narrator_mode,
         'ref_text': ref_text,
         'segments_cleared': narrator_changed or mode_changed or ref_text_changed,
+    })
+
+
+@app.route('/api/books/<int:book_id>/single-narrator', methods=['PUT'])
+def set_single_narrator(book_id):
+    """Toggle single narrator mode for a book.
+
+    Enabling forgets all detected characters (and their reference audio)
+    and turns character detection off for the book. Disabling re-runs the
+    configured character detection in the background.
+    """
+    body = request.get_json(force=True) or {}
+    enabled = bool(body.get('enabled'))
+
+    with get_conn() as conn:
+        book = conn.execute(
+            'SELECT id, title, author FROM books WHERE id=?', (book_id,)
+        ).fetchone()
+        if not book:
+            return jsonify({'error': 'Not found'}), 404
+        char_ref_paths = [
+            row['ref_audio_path']
+            for row in conn.execute(
+                'SELECT ref_audio_path FROM characters '
+                'WHERE book_id=? AND ref_audio_path IS NOT NULL',
+                (book_id,),
+            ).fetchall()
+        ]
+        conn.execute(
+            'UPDATE books SET single_narrator_mode=? WHERE id=?',
+            (int(enabled), book_id),
+        )
+
+    if enabled:
+        with get_conn() as conn:
+            conn.execute(
+                'DELETE FROM speaker_annotations WHERE book_id=?', (book_id,)
+            )
+            conn.execute('DELETE FROM characters WHERE book_id=?', (book_id,))
+        for path in char_ref_paths:
+            _delete_file_if_exists(path)
+        _clear_book_tts_segments(book_id)
+        _set_character_analysis_status(
+            book_id, 'complete',
+            'Single narrator mode — character detection disabled.',
+        )
+        return jsonify({
+            'ok': True,
+            'single_narrator_mode': True,
+            'characters_cleared': True,
+        })
+
+    # Turned off: re-run the configured detection from the stored chapters.
+    detection_config = app_settings.load()
+    detection_mode = str(
+        detection_config.get('character_detection_mode', 'legacy') or 'legacy'
+    ).lower()
+    with get_conn() as conn:
+        rows = conn.execute(
+            'SELECT title, content FROM chapters WHERE book_id=? ORDER BY order_num',
+            (book_id,),
+        ).fetchall()
+    data = {
+        'title': book['title'],
+        'author': book['author'],
+        'chapters': [dict(row) for row in rows],
+    }
+    _set_character_analysis_status(
+        book_id,
+        'queued' if detection_mode == 'llm' else 'running',
+        'Re-detecting characters…',
+    )
+    if detection_mode == 'llm':
+        _character_analysis_reserve()
+        tts.unload()
+    threading.Thread(
+        target=_detect_characters,
+        args=(book_id, data, detection_mode, detection_config),
+        daemon=True,
+    ).start()
+    return jsonify({
+        'ok': True,
+        'single_narrator_mode': False,
+        'analysis': 'restarted',
     })
 
 
@@ -2113,7 +2209,7 @@ def save_settings():
         'narrator_instruct', 'single_narrator_mode', 'default_speed', 'audio_format',
         'subtitle_format', 'theme', 'font_size', 'font_family', 'line_height',
         'normalize_text', 'tts_num_step', 'tts_batch_size', 'tts_coalesce_chars',
-        'tts_accel', 'tts_export_workers',
+        'tts_accel', 'tts_export_workers', 'tts_split_mode', 'tts_align_asr_model',
         'character_detection_mode', 'llm_base_url', 'llm_api_key', 'llm_model',
         'llm_timeout_sec', 'llm_max_output_tokens', 'llm_max_characters',
         'llm_batch_chars',
@@ -2167,6 +2263,12 @@ def save_settings():
                 updates[key] = max(low, min(int(updates[key]), high))
             except (TypeError, ValueError):
                 updates[key] = default
+    if 'tts_split_mode' in updates:
+        mode = str(updates['tts_split_mode'] or 'align').strip().lower()
+        updates['tts_split_mode'] = mode if mode in ('align', 'chars') else 'align'
+    if 'tts_align_asr_model' in updates:
+        name = str(updates['tts_align_asr_model'] or '').strip()
+        updates['tts_align_asr_model'] = name[:200] or 'openai/whisper-small'
     if 'normalize_text' in updates:
         updates['normalize_text'] = bool(updates['normalize_text'])
     if 'tts_num_step' in updates:

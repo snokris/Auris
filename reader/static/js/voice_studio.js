@@ -117,7 +117,7 @@ function syncSingleNarratorUI() {
 
   if (singleNarratorMode) {
     note.textContent =
-      "Single narrator mode is on. Character voices can still be edited here, but playback and export will use the narrator voice for every line.";
+      "Single narrator mode is on. The narrator voice reads every line and character detection is disabled for this book.";
     note.classList.remove("hidden");
   } else {
     note.textContent = "";
@@ -144,9 +144,33 @@ function initNarratorControls() {
   const toggle = document.getElementById("single-narrator-mode");
   if (toggle) {
     toggle.checked = singleNarratorMode;
-    toggle.addEventListener("change", () => {
-      singleNarratorMode = toggle.checked;
-      syncSingleNarratorUI();
+    toggle.addEventListener("change", async () => {
+      const enabled = toggle.checked;
+      if (
+        enabled &&
+        !confirm(
+          "Use a single narrator for the whole book?\n\n" +
+          "Detected characters and their voice settings will be forgotten, " +
+          "and character detection stays off for this book."
+        )
+      ) {
+        toggle.checked = false;
+        return;
+      }
+      const r = await fetch(`/api/books/${BOOK_ID}/single-narrator`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled }),
+      });
+      const d = await r.json();
+      if (d.ok) {
+        singleNarratorMode = enabled;
+        syncSingleNarratorUI();
+        loadCharacters();
+      } else {
+        toggle.checked = !enabled;
+        alert(`Could not update narration mode: ${d.error || "unknown error"}`);
+      }
     });
   }
 
@@ -156,8 +180,15 @@ function initNarratorControls() {
 }
 
 async function loadCharacters() {
-  const chars = await fetch(`/api/books/${BOOK_ID}/characters`).then((r) => r.json());
   const list = document.getElementById("char-list");
+  if (singleNarratorMode) {
+    document.getElementById("char-count").textContent = "";
+    list.innerHTML =
+      '<div class="muted" style="padding:16px">Single narrator mode is on — ' +
+      "character detection is disabled for this book.</div>";
+    return;
+  }
+  const chars = await fetch(`/api/books/${BOOK_ID}/characters`).then((r) => r.json());
   document.getElementById("char-count").textContent = `(${chars.length} detected)`;
 
   if (!chars.length) {
