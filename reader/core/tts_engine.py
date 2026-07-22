@@ -597,6 +597,9 @@ class TTSEngine:
         self._batch_size_cap: int | None = None
         self._accel_status: dict = {"effective": "off", "message": ""}
         self._generation_stream = None
+        # Whisper ASR (word-timestamp aligned splitting of coalesced units).
+        self._asr_load_lock = threading.Lock()
+        self._asr_unavailable = False
         os.makedirs(AUDIO_CACHE_DIR, exist_ok=True)
         os.makedirs(VOICE_REF_DIR, exist_ok=True)
         os.makedirs(VOICE_PROMPT_DIR, exist_ok=True)
@@ -845,6 +848,66 @@ class TTSEngine:
             return bool(mps is not None and mps.is_available())
         except ImportError:
             return False
+
+    def _ensure_asr_pipe(self):
+        """Lazily load OmniVoice's bundled Whisper ASR pipeline.
+
+        Used for word-timestamp alignment when splitting coalesced units.
+        The first call downloads the ASR model into the HF cache.
+        """
+        model = self.model
+        if model is None:
+            return None
+        pipe = getattr(model, "_asr_pipe", None)
+        if pipe is not None:
+            return pipe
+        with self._asr_load_lock:
+            pipe = getattr(model, "_asr_pipe", None)
+            if pipe is not None:
+                return pipe
+            try:
+                log.info(
+                    "Loading Whisper ASR for aligned segment splitting "
+                    "(first run downloads the model)…"
+                )
+                model.load_asr_model()
+            except Exception as exc:
+                log.warning("Whisper ASR load failed (%s); aligned split off.", exc)
+                self._asr_unavailable = True
+                return None
+        return getattr(model, "_asr_pipe", None)
+
+    def _split_members_aligned(
+        self,
+        audio: "np.ndarray",
+        member_texts: list[str],
+        language: str | None,
+    ) -> list["np.ndarray"] | None:
+        """Word-timestamp based split of a coalesced unit; None = fall back."""
+        if getattr(self, "_asr_unavailable", False):
+            return None
+        try:
+            from core.settings import get as _settings_get
+
+            if str(_settings_get("tts_split_mode", "align")).lower() != "align":
+                return None
+        except Exception:
+            pass
+        pipe = self._ensure_asr_pipe()
+        if pipe is None:
+            return None
+        from core.audio_align import split_by_word_alignment
+
+        parts = split_by_word_alignment(
+            audio, SAMPLE_RATE, member_texts, pipe, language
+        )
+        if parts is None:
+            log.info(
+                "Aligned split unavailable for a %d-member unit; "
+                "using char-weight fallback.",
+                len(member_texts),
+            )
+        return parts
 
     @staticmethod
     def cache_key(
@@ -1489,7 +1552,18 @@ class TTSEngine:
                 for unit, audio in zip(sub, audios):
                     members = unit.get("members") or [unit]
                     member_texts = [m["text"] for m in members]
-                    parts = _split_audio_by_char_weights(audio, member_texts)
+                    parts = None
+                    if len(members) > 1:
+                        parts = self._split_members_aligned(
+                            audio, member_texts, language
+                        )
+                    if parts is None:
+                        parts = _split_audio_by_char_weights(audio, member_texts)
+                    if len(parts) > 1:
+                        # Fade the artificial seams so cuts can never click.
+                        from core.audio_align import declick_clips
+
+                        parts = declick_clips(parts, SAMPLE_RATE)
                     if len(parts) != len(members):
                         parts = [audio] + [
                             np.zeros(1, dtype=audio.dtype) for _ in members[1:]

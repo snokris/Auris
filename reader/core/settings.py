@@ -90,6 +90,13 @@ DEFAULTS: dict = {
     # 0 = disabled. ~720 is a strong speed win on audiobooks.
     'tts_coalesce_chars': 720,
 
+    # How coalesced units are cut back into per-segment clips.
+    # align = Whisper word-timestamp alignment (cuts land in inter-word
+    #         silence; fixes clipped segment ends and cross-boundary
+    #         word fragments). Falls back to chars when unavailable.
+    # chars = legacy proportional character-weight split.
+    'tts_split_mode': 'align',
+
     # OmniVoice iterative decoding steps for playback and export.
     # Higher = better quality but slower. 16 is a good default; 32 is max quality.
     'tts_num_step': 16,
