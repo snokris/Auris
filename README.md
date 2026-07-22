@@ -1,12 +1,10 @@
-# Auris
+# Auris — lokális hangoskönyvkészítő (snokris-változat)
 
-Offline audiobook reader for EPUB, PDF, and TXT with selectable local
-OmniVoice or Higgs TTS 3 speech, character-aware voices, per-book narrator
-control, and synced text highlighting.
+Teljesen **lokális, ingyenes hangoskönyvkészítő**: EPUB-, PDF- vagy TXT-könyvből felolvasott hangoskönyvet készít (WAV/MP3 + felirat), internetkapcsolat és API-kulcsok nélkül. Kiemelt **magyar nyelvi támogatással** — automatikus magyar nyelvfelismerés, „I. FEJEZET” típusú fejezetdetektálás, magyar párbeszédkezelés, hangklónozás magyar referenciahangból.
 
-Everything runs locally after setup. No API keys. No hosted TTS dependency.
+Ez a repó [mp3pintyo/Auris](https://github.com/mp3pintyo/Auris) forkja. Az eredeti projekt a szerző munkája és érdeme; ez a változat elsősorban **Apple Silicon (macOS) támogatással** és néhány saját minőségjavító funkcióval egészíti ki. Windows- és Linux-telepítéshez az eredeti repó útmutatója az irányadó.
 
-## Screenshots
+## Képernyőképek
 
 ### Library
 ![Library](assets/library.png)
@@ -20,259 +18,66 @@ Everything runs locally after setup. No API keys. No hosted TTS dependency.
 ### Settings
 ![Settings](assets/settings.png)
 
-## Highlights
+## Miben más ez a fork?
 
-- Import EPUB, PDF, and TXT books.
-- Detect chapters, prologues, epilogues, forewords, appendices, and parts automatically.
-- Generate per-character voices with deterministic assignment.
-- Attribute dialogue to characters with a configurable local LM Studio, Ollama,
-  llama.cpp, or other OpenAI-compatible language-model endpoint.
-- Customize each detected character in Voice Studio.
-- Customize the narrator voice per book.
-- Preview voices before saving.
-- Upload reference WAV files for voice cloning.
-- Invalidate stale cached playback automatically when narrator or character voices change.
-- Export numbered, per-chapter audio as WAV or MP3 and subtitles as ASS or SRT.
-- Select all chapters or use print-style selections such as `1,3,5-8`.
-- Run from a project-local `.venv` created by the installer.
+- **Apple Silicon (MPS) támogatás** — a TTS-motorok a Metal GPU-n futnak, nem CPU-n. Az OmniVoice float32-ben (a bfloat16 a mondatkezdeteket csípte le M-szérián), a Higgs a natív bfloat16-jában. Vészkapcsolók: `AURIS_MPS_DTYPE=bf16` (OmniVoice), `AURIS_HIGGS_MPS_DTYPE=fp32` (Higgs).
+- **Whisper-illesztett szegmensvágás** — az összevontan generált hang szegmenshatárait szóidőbélyegek és dinamikus programozásos szóillesztés jelöli ki; a vágás a szavak közti szünetbe, nullátmenetre kerül, élsimítással. Ez megszünteti a lecsípett mondatvégeket, az áthallott szófoszlányokat és a határkattanásokat. A Settingsben választható a vágási mód és az illesztéshez használt Whisper-modell (alap: whisper-small).
+- **Mentett narrátorhangok (Voice presets)** — a Voice Studióban a könyv referenciahangja (WAV + átirat) névvel elmenthető, és bármely könyvre egy kattintással alkalmazható.
+- **Single narrator kártya** — a Voice Studio tetején kapcsolható az egynarrátoros mód: bekapcsolva a narrátor olvas mindent, a karakterdetektálás kikapcsol, a felismert szereplők törlődnek; kikapcsolva a detektálás automatikusan újrafut.
+- **Akcentusválasztó bővítés** — „None (natural)” és „Hungarian” opció a hangleírásokban (magyar felolvasáshoz az akcentusjelölés nélküli leírás ajánlott).
 
-## Requirements
+## Telepítés macOS-en (Apple Silicon)
 
-- Python 3.10 or later
-- `ffmpeg` on `PATH` for MP3 export
-- OmniVoice model files stored locally
-- Optional NVIDIA GPU for faster inference
-
-## Installation
+Előfeltétel a [Homebrew](https://brew.sh), utána:
 
 ```bash
-git clone https://github.com/nikhilprasanth/Auris.git
+brew install python@3.12 ffmpeg git
+git clone https://github.com/snokris/Auris.git
 cd Auris
-```
-
-Run the installer:
-
-```bash
-# Windows
-reader\setup.bat
-
-# Linux / macOS
+python3.12 -m venv reader/.venv
 bash reader/setup.sh
 ```
 
-Or directly:
+Indítás:
 
 ```bash
-python reader/setup.py
+bash reader/run.sh
 ```
 
-The installer detects CUDA or CPU, creates `reader/.venv`, installs PyTorch, OmniVoice, spaCy, and the reader dependencies, then downloads the `en_core_web_sm` spaCy model when network access is available.
+Ezután a böngészőben: **http://127.0.0.1:7860**
 
-## Model setup
+Első használatkor a Settings oldalon töltsd le az OmniVoice-modellt (~3 GB), és állítsd az exportformátumot MP3-ra. A modellek betöltésekor a Terminálban ellenőrizhető az eszköz: `on mps (torch.float32)` (OmniVoice), illetve `device=mps, dtype=torch.bfloat16` (Higgs).
 
-The OmniVoice weights are not bundled with this repository.
+## Használat röviden
 
-You can either:
+1. **Library** — EPUB/PDF/TXT importálása (a magyar nyelvet magától felismeri).
+2. **Reader** — lejátszás bármely mondattól; a fejezet hangja előre is legenerálható.
+3. **Voice Studio** — narrátorhang beállítása leírással vagy klónozás referencia-WAV-ból (3–10 másodperces, tiszta, egybeszélős felvétel + pontos átirat); hangpresetek mentése és alkalmazása.
+4. **Export** — fejezetek MP3-ba felirattal (`all`, `2-6` vagy `1,3,7-10` formában).
 
-- Download them from the Settings page using the built-in Hugging Face downloader.
-- Point Settings at an existing local OmniVoice model directory.
+## TTS-motorok
 
-The model directory must contain the files OmniVoice expects, such as `config.json` and model weights.
+| | OmniVoice (alapértelmezett) | Higgs TTS 3 — 4B |
+|---|---|---|
+| Magyar támogatás | igen (600+ nyelv) | igen, kiemelt |
+| Erőssége | gyors, kis memóriaigény | kifejezőbb prozódia |
+| Licenc | nyílt | kutatási/nem kereskedelmi* |
 
-### Higgs TTS 3
+\* A Higgs licence hangoskönyveknél jól látható „Boson AI Higgs Audio” forrásmegjelölést kér, a hangklónozáshoz pedig a beszélő hozzájárulása szükséges. Részletek a [hivatalos modellkártyán](https://huggingface.co/bosonai/higgs-tts-3-4b).
 
-Select **Higgs TTS 3 — 4B** in Settings to try the Boson AI model. Auris uses
-the Transformers-compatible
-`multimodalart/higgs-audio-v3-tts-4b-transformers` adapter and downloads its
-model files into the HuggingFace cache on first load. You can also point the
-Higgs section at a compatible local snapshot.
+## Hasznos beállítások (Settings)
 
-Higgs and OmniVoice keep separate settings and run with separate Transformers
-versions. The installer puts Higgs' Transformers 5.13 runtime in
-`reader/.higgs_runtime`; OmniVoice remains on its compatible 5.3 release.
+- `Audio format` → **MP3** (az exporthoz ffmpeg szükséges)
+- `tts_num_step` → 16 hallgatáshoz, 32 végleges exporthoz
+- `Merge short lines` (coalesce) → 720 ajánlott; a szegmenshatárokat az illesztett vágás tartja tisztán
+- `Split coalesced audio` → Aligned (ajánlott)
+- `Alignment ASR model` → whisper-small (gyors) … whisper-large-v3-turbo (legpontosabb)
+- Magyar könyvekhez: single narrator mód, vagy LLM-alapú karakterfelismerés lokális modellel (Ollama / LM Studio)
 
-Higgs supports Hungarian, transcript-assisted zero-shot voice cloning, and
-inline emotion, style, prosody, pause, and sound-effect controls. Auris maps its
-existing scene speed and expression tags to those controls.
+## Fejlesztési rend
 
-Higgs has its own research/non-commercial license with a creator-use grant.
-Audiobooks and similar creator media require prominent Boson AI Higgs Audio
-attribution, and voice cloning requires the speaker's consent. Review the
-[official model card](https://huggingface.co/bosonai/higgs-tts-3-4b) before use.
+A `dev` ág a mindig működő, összefésült állapot; minden téma saját `feature/<téma>` ágon készül, és tesztelés után olvad vissza. A változtatások visszakerülhetnek az eredeti projektbe is: az MPS-támogatás PR-ként beküldve ([mp3pintyo/Auris#1](https://github.com/mp3pintyo/Auris/pull/1)).
 
-## Usage
+## Köszönet
 
-1. Import a book from the library page.
-2. Open the book and start playback from any sentence.
-3. Open Voice Studio from the reader sidebar.
-4. Adjust character voices or the narrator voice, preview them, then save.
-5. Export the current chapter or select chapters with `all`, a range such as
-   `2-6`, or a comma-separated expression such as `1,3,7-10`.
-
-### Local LLM character detection
-
-In Settings, select **Local LLM** under Character & Dialogue Speaker Detection,
-then enter an OpenAI-compatible base URL and the exact served model name.
-Typical local URLs are:
-
-- LM Studio: `http://127.0.0.1:1234/v1`
-- Ollama: `http://127.0.0.1:11434/v1`
-
-For the LM Studio test configuration used during development:
-
-- served model: `unsloth/gemma-4-26b-a4b-it`
-- LM Studio context length: `160000` tokens
-- Auris request timeout: `600` seconds
-- maximum stored characters: `60`
-- API key: empty for a normal local server
-
-The context length is configured in LM Studio or Ollama, not in Auris. Auris
-deliberately sends one chapter per request because the size of the structured
-speaker-assignment response, rather than the model's input context, is normally
-the limiting factor.
-
-Recommended setup:
-
-1. Start the local server and load the language model.
-2. Open **Settings → Character & Dialogue Speaker Detection**.
-3. Select **Local LLM — recommended**.
-4. Enter the base URL and the exact model identifier exposed by the server.
-5. Set the request timeout and maximum character count. Add an API key only if
-   the local server requires one.
-6. Use **Test connection**, save the settings, and then import the book.
-
-Character and dialogue-speaker analysis is an import-time background job.
-Auris unloads the selected TTS engine before it starts so the TTS and language
-models do not compete for VRAM. It sends numbered text units chapter by chapter,
-builds a canonical character roster, and stores every dialogue-to-speaker
-assignment with the book. The reader, Voice Studio, playback, and export then
-reuse those stored assignments; the TTS engine is loaded lazily only when it is
-next needed. If an individual chapter fails, successful chapter results are
-kept and the book is marked as partially analyzed instead of discarding the
-whole run.
-
-Books imported before enabling Local LLM detection must be deleted and imported
-again if they should receive the new speaker assignments. The analysis is not
-retroactively started just by changing the setting.
-
-The two files in `test_docs/` were measured end to end against LM Studio with
-`unsloth/gemma-4-26b-a4b-it` and a 160,000-token server context:
-
-| Test document | Chapters | Dialogue candidates | Speaker assigned | Coverage | Chapter errors | Elapsed |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| `Rejto_Jeno-14-karatos-auto.pdf` | 21 | 2,063 | 1,845 | 89.4% | 0 | 6m 36s |
-| `14Carat.txt` | 21 | 1,395 | 1,350 | 96.8% | 0 | 7m 56s |
-
-These figures describe the tested model and documents, not a guaranteed score
-for every book. Dialogue style, OCR/text extraction quality, model choice, and
-model quantization can all change the result. The legacy English-oriented
-spaCy/regex detector remains available as a fallback mode.
-
-Multi-chapter exports are saved beneath `reader/exports/<book_title>/` with
-numbered filenames, for example `01_Introduction.mp3`. When MP3 export succeeds,
-the temporary WAV file is removed automatically.
-
-On RTX 3090-class GPUs, leave **Settings → Parallel export workers** on
-**Auto** or select **2**. Multi-chapter export then loads a second OmniVoice model
-temporarily and runs two CUDA streams. If VRAM is insufficient or either
-worker fails, Auris automatically continues on the primary model.
-
-## Voice design caveats
-
-OmniVoice does not produce clean output for every voice-design combination. The upstream docs note that some attribute mixes are unreliable, especially without reference audio.
-
-The most fragile cases are youth voices with extreme pitch settings. For example, combinations like `male, teenager, very high pitch, american accent` can degrade into squeaks, bursts, or static instead of intelligible speech.
-
-Auris now tries to stabilize some known-bad combinations during preview and playback by relaxing them to a nearby voice design, but this is still a model limitation, not something the UI can fully solve.
-
-Best results:
-
-- Prefer `young adult` over `teenager` when you do not have reference audio.
-- Avoid `very high pitch` and `very low pitch` on `child` and `teenager` voices.
-- Upload a clean WAV reference when you need a specific youthful voice.
-- Preview before saving.
-
-Reference: `https://github.com/k2-fsa/OmniVoice/blob/master/docs/voice-design.md`
-
-## Offline installs
-
-Local wheels are not used by default.
-
-If you intentionally maintain your own wheel cache, opt in explicitly:
-
-```bash
-# Windows
-set AURIS_USE_LOCAL_WHEELS=1
-reader\setup.bat
-
-# Linux / macOS
-AURIS_USE_LOCAL_WHEELS=1 bash reader/setup.sh
-```
-
-For a strict offline install:
-
-```bash
-# Windows
-set AURIS_OFFLINE=1
-set AURIS_WHEELS_DIR=E:\path\to\wheels
-reader\setup.bat
-
-# Linux / macOS
-AURIS_OFFLINE=1 AURIS_WHEELS_DIR=/path/to/wheels bash reader/setup.sh
-```
-
-## Project structure
-
-```text
-Auris/
-|-- README.md
-|-- LICENSE
-|-- wheels/          ← offline wheel cache (optional)
-`-- reader/
-    |-- app.py
-    |-- setup.py     ← cross-platform installer (called by setup.bat / setup.sh)
-    |-- setup.bat    ← Windows installer
-    |-- setup.sh     ← Linux / macOS installer
-    |-- run.bat      ← Windows launcher
-    |-- run.sh       ← Linux / macOS launcher
-    |-- requirements.txt
-    |-- core/
-    |-- static/
-    |-- templates/
-    `-- data/
-```
-
-## Main dependencies
-
-- OmniVoice
-- Flask
-- ebooklib
-- PyMuPDF
-- spaCy
-- pydub
-- soundfile
-- PyTorch
-
-## Roadmap
-
-### Small language model for emotion classification
-
-The current enrichment pipeline uses regex patterns to decide which non-verbal tag (`[laughter]`, `[surprise-wa]`, `[question-ei]`, etc.) to inject before each TTS segment. It works well when attribution verbs are present in the text ("she gasped", "he scoffed"), but it cannot understand tone, irony, or context that isn't signalled by a keyword.
-
-The plan is to connect to any OpenAI-compatible language model endpoint as an emotion classifier between parsing and TTS synthesis:
-
-- **Connection:** a configurable base URL and API key in Settings, compatible with any OpenAI-spec server — local (Ollama, LM Studio, llama.cpp server) or remote. No runtime library bundled with Auris; the standard `openai` Python client is the only dependency.
-- **Model candidates:** **Qwen3-0.8B** (fastest, lowest RAM), **Qwen3-2B** (better reasoning, still lightweight), **Gemma 4 E2B** (Google's 2B edge model), **LFM2.5-1.2B-Instruct** (Liquid AI — strong reasoning efficiency per parameter). Any model the user serves behind an OpenAI-compatible endpoint will work.
-- **Input:** the current segment text plus one sentence of surrounding context.
-- **Output:** a single tag from the supported set, or `none`. Structured output / JSON mode keeps latency low and parsing trivial.
-- **Fallback:** the existing regex engine remains as a zero-latency fallback when no endpoint is configured or the model returns an invalid response.
-- **Integration point:** `core/enrichment.py` — the `_select_expression_tag` function would be replaced by a call to the classifier, with the regex result used as a hint in the prompt.
-- **UX:** base URL, API key, and model name are set in Settings. Leaving the base URL blank keeps regex-only mode active.
-
-This would fix the main remaining gap: narration sentences that carry emotional weight without any keyword signal, and multi-emotion moments where the current system can only pick one tag.
-
-## License
-
-The Auris source is MIT. See [LICENSE](LICENSE). Models retain their own
-licenses; in particular, Higgs TTS 3 is not distributed under the Auris MIT
-license.
+Az alapprojektért köszönet **mp3pintyo**-nak, a TTS-motorokért a [k2-fsa/OmniVoice](https://github.com/k2-fsa/OmniVoice) és a [Boson AI](https://huggingface.co/bosonai) csapatának. A fork licence az eredeti projektét követi (lásd `LICENSE`).
