@@ -32,6 +32,22 @@ SAMPLE_RATE = 24_000
 EXPORTS_DIR = str(Path(__file__).resolve().parent.parent / 'exports')
 os.makedirs(EXPORTS_DIR, exist_ok=True)
 
+
+def book_export_dir(book_title: str, author: str | None = None) -> str:
+    """Per-book output folder: ``exports/<Author>/<Title>`` (created).
+
+    Unknown/empty authors collapse to ``exports/<Title>`` so the tree stays
+    clean for books without metadata.
+    """
+    parts = [EXPORTS_DIR]
+    author_safe = _safe_name(author) if str(author or '').strip() else ''
+    if author_safe and author_safe.lower() != 'unknown':
+        parts.append(author_safe)
+    parts.append(_safe_name(book_title))
+    path = os.path.join(*parts)
+    os.makedirs(path, exist_ok=True)
+    return path
+
 DEFAULT_SEGMENT_PAUSE_SEC = 0.35
 DIALOGUE_TURN_PAUSE_SEC = 0.55
 ELLIPSIS_PAUSE_SEC = 1.5
@@ -220,9 +236,10 @@ def export_single_chapter(
     sub_fmt: str = 'ass',
     output_dir: str | None = None,
     file_stem: str | None = None,
+    author: str | None = None,
 ) -> dict:
     """Returns {'audio_path': ..., 'subtitle_path': ..., 'audio_fmt': ..., 'sub_fmt': ...}"""
-    output_dir = output_dir or EXPORTS_DIR
+    output_dir = output_dir or book_export_dir(book_title, author)
     os.makedirs(output_dir, exist_ok=True)
     safe_title = _safe_name(file_stem or chapter_title)
     timeline = build_timeline(segments)
@@ -262,16 +279,17 @@ def export_chapter_zip(
     character_colors: dict,
     audio_fmt: str = 'wav',
     sub_fmt: str = 'ass',
+    author: str | None = None,
 ) -> str:
     """chapters_data: list of {chapter_title, segments}. Returns zip file path."""
     safe_book = _safe_name(book_title)
-    zip_path = os.path.join(EXPORTS_DIR, f'{safe_book}_chapters.zip')
+    zip_path = os.path.join(book_export_dir(book_title, author), f'{safe_book}_chapters.zip')
 
     with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
         for ch in chapters_data:
             result = export_single_chapter(
                 ch['chapter_title'], book_title, ch['segments'],
-                character_colors, audio_fmt, sub_fmt,
+                character_colors, audio_fmt, sub_fmt, author=author,
             )
             ch_safe = _safe_name(ch['chapter_title'])
             ext = result['audio_fmt']
@@ -287,11 +305,10 @@ def export_chapter_folder(
     character_colors: dict,
     audio_fmt: str = 'wav',
     sub_fmt: str = 'ass',
+    author: str | None = None,
 ) -> dict:
-    """Write numbered chapter files beneath ``exports/<book title>``."""
-    safe_book = _safe_name(book_title)
-    output_dir = os.path.join(EXPORTS_DIR, safe_book)
-    os.makedirs(output_dir, exist_ok=True)
+    """Write numbered chapter files beneath ``exports/<Author>/<Title>``."""
+    output_dir = book_export_dir(book_title, author)
     max_number = max(
         (int(ch.get('chapter_number', 0)) for ch in chapters_data),
         default=len(chapters_data),
