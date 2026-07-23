@@ -840,7 +840,10 @@ code {
   height: 100%; width: 0%; background: var(--accent);
   border-radius: 2px; transition: width 0.35s ease;
 }
-.export-status { font-size: 0.78rem; color: var(--text2); margin-top: 4px; min-height: 18px; }
+.export-status {
+  font-size: 0.78rem; color: var(--text2); margin-top: 4px; min-height: 18px;
+  white-space: normal; overflow-wrap: anywhere; max-height: 90px; overflow-y: auto;
+}
 
 /* ── Voice Studio ───────────────────────────────────────────────────────────── */
 .studio-page { max-width: 960px; margin: 0 auto; padding: 36px 28px 100px; }

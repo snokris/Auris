@@ -134,5 +134,50 @@ class ChapterGenerationApiTest(unittest.TestCase):
         self.assertEqual(chapters[0]["audio_total"], 3)
 
 
+class _CancelRecordingTTS:
+    def __init__(self):
+        self.cancel_calls = 0
+
+    def status(self):
+        return {"state": "ready"}
+
+    def cancel(self):
+        self.cancel_calls += 1
+        return True
+
+
+class TtsCancelExportGatingTest(unittest.TestCase):
+    """/api/tts/cancel must not kill the engine while a bulk job owns it.
+
+    Higgs cancel() terminates the worker subprocess; the reader UI fires
+    cancel on every chapter switch, which used to abort a running export.
+    """
+
+    def setUp(self):
+        self.original_tts = app_module.tts
+        self.fake = _CancelRecordingTTS()
+        app_module.tts = self.fake
+        app_module.app.config["TESTING"] = True
+        self.client = app_module.app.test_client()
+
+    def tearDown(self):
+        app_module.tts = self.original_tts
+
+    def test_cancel_ignored_while_export_exclusive(self):
+        app_module._export_exclusive_begin()
+        try:
+            resp = self.client.post("/api/tts/cancel").get_json()
+            self.assertEqual(resp.get("busy"), "export")
+            self.assertFalse(resp["cancel_requested"])
+            self.assertEqual(self.fake.cancel_calls, 0)
+        finally:
+            app_module._export_exclusive_end()
+
+    def test_cancel_passes_through_when_idle(self):
+        resp = self.client.post("/api/tts/cancel").get_json()
+        self.assertTrue(resp["cancel_requested"])
+        self.assertEqual(self.fake.cancel_calls, 1)
+
+
 if __name__ == "__main__":
     unittest.main()

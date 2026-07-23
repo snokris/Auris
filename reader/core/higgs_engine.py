@@ -19,6 +19,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 from pathlib import Path
 from typing import Any
 
@@ -448,6 +449,25 @@ class HiggsTTSEngine:
                 return response
             log.info("Higgs worker: %s", line.rstrip())
 
+    def _wait_until_ready(self, timeout: float = 600.0) -> None:
+        """Block until the model is ready, kicking off a load if needed.
+
+        After ``cancel()`` kills the worker it reloads asynchronously; a bulk
+        job's next segment must wait for that reload instead of failing
+        instantly with "not loaded".
+        """
+        if self._ready and self._worker is not None:
+            return
+        if not self._loading:
+            self.load_async()
+        deadline = time.monotonic() + max(0.0, timeout)
+        while time.monotonic() < deadline:
+            if self._error:
+                return
+            if self._ready and self._worker is not None:
+                return
+            time.sleep(0.5)
+
     def _synthesize(
         self,
         text: str,
@@ -458,6 +478,8 @@ class HiggsTTSEngine:
         language: str | None,
         normalize_text: bool,
     ) -> np.ndarray:
+        if not self._ready or self._worker is None:
+            self._wait_until_ready()
         if not self._ready or self._worker is None:
             raise RuntimeError("Higgs TTS is not loaded. " + (self._error or "Load it first."))
         settings = self._generation_settings()

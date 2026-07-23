@@ -1212,6 +1212,12 @@ def tts_load():
 
 @app.route('/api/tts/cancel', methods=['POST'])
 def tts_cancel():
+    # The reader UI fires this on every chapter switch and stop-playback to
+    # abort a slow interactive segment. During a bulk export or chapter
+    # generation it must be ignored: Higgs cancel() terminates the worker
+    # process, which would instantly fail every remaining segment of the job.
+    if _export_exclusive_active():
+        return jsonify({'ok': True, 'cancel_requested': False, 'busy': 'export'})
     return jsonify({'ok': True, 'cancel_requested': tts.cancel()})
 
 
@@ -1469,7 +1475,12 @@ def _ensure_audio_for_chapter(
     Pending segments are batched through OmniVoice so full-book export uses the GPU
     efficiently. Quality is controlled by settings ``tts_num_step``.
     Progress is updated after every finished segment (including mid-batch).
+
+    Returns a failure summary ``{'failed': int, 'first_error': str | None}`` so
+    callers can refuse to write chapter files full of silence. Raises early if
+    synthesis fails systematically (every attempt errors out).
     """
+    failure = {'failed': 0, 'first_error': None}
     with get_conn() as conn:
         book = conn.execute('SELECT language FROM books WHERE id=?', (book_id,)).fetchone()
         language = book['language'] if book and book['language'] else None
@@ -1508,7 +1519,7 @@ def _ensure_audio_for_chapter(
         })
 
     if not pending_items:
-        return
+        return failure
 
     try:
         from core.tts_engine import _tts_num_step_from_settings, _tts_batch_size_from_settings
@@ -1599,6 +1610,8 @@ def _ensure_audio_for_chapter(
             'falling back to per-segment',
             chapter_id, len(pending_items), e,
         )
+        failure['first_error'] = str(e)
+        fallback_ok = 0
         for local_i, item in enumerate(pending_items):
             # Skip items already filled by a partial batch before the exception.
             if segs[pending_idx[local_i]].get('audio_path') and os.path.exists(
@@ -1618,10 +1631,26 @@ def _ensure_audio_for_chapter(
             except Exception as seg_exc:
                 log.warning('Audio generation failed for segment: %s', seg_exc)
                 result = None
+                failure['failed'] += 1
+                if failure['first_error'] is None:
+                    failure['first_error'] = str(seg_exc)
+                if failure['failed'] >= 5 and fallback_ok == 0:
+                    # Every attempt errors instantly — this is systemic, not a
+                    # bad segment. Abort instead of grinding through thousands
+                    # of failures and exporting silence.
+                    with result_lock:
+                        _flush_db(force=True)
+                    raise RuntimeError(
+                        'TTS synthesis is failing for every segment '
+                        f'(first error: {failure["first_error"]})'
+                    ) from seg_exc
+            if result is not None:
+                fallback_ok += 1
             _apply_result(local_i, result)
 
     with result_lock:
         _flush_db(force=True)
+    return failure
 
 
 def _start_export_pool(job: dict) -> TTSExportPool:
@@ -1948,9 +1977,15 @@ def _run_chapter_export(job_id: str, book_id: int, chapter_id: int, audio_fmt: s
         job['done'] = 0
         job['message'] = f'Generating audio (0/{len(segs)})'
         export_pool = _start_export_pool(job)
-        _ensure_audio_for_chapter(
+        chapter_failure = _ensure_audio_for_chapter(
             book_id, chapter_id, segs, job, export_pool=export_pool
         )
+        if chapter_failure and chapter_failure['failed']:
+            raise RuntimeError(
+                f"{chapter_failure['failed']} of {len(segs)} segments failed to "
+                f"synthesize (first error: {chapter_failure['first_error']}). "
+                'No file was written — already generated audio is kept in the cache.'
+            )
         job['message'] = 'Merging audio...'
         colors = _get_char_colors(book_id)
         result = exporter.export_single_chapter(
@@ -2008,13 +2043,25 @@ def _run_chapterwise_export(
         job['done'] = 0
         job['message'] = f'Generating audio (0/{total})'
         export_pool = _start_export_pool(job)
+        total_failed = 0
+        first_error = None
         for ch_data in chapters_data:
-            _ensure_audio_for_chapter(
+            chapter_failure = _ensure_audio_for_chapter(
                 book_id,
                 ch_data['ch_id'],
                 ch_data['segments'],
                 job,
                 export_pool=export_pool,
+            )
+            if chapter_failure and chapter_failure['failed']:
+                total_failed += chapter_failure['failed']
+                if first_error is None:
+                    first_error = chapter_failure['first_error']
+        if total_failed:
+            raise RuntimeError(
+                f'{total_failed} segments failed to synthesize '
+                f'(first error: {first_error}). No chapter files were written — '
+                'already generated audio is kept in the cache.'
             )
         job['message'] = 'Writing chapter files...'
         colors = _get_char_colors(book_id)
