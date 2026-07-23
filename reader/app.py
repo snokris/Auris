@@ -741,6 +741,11 @@ def preview_character(book_id, char_id):
     if not row:
         return jsonify({'error': 'Not found'}), 404
 
+    if _export_exclusive_active():
+        return jsonify({
+            'error': 'Export in progress — voice preview is paused until export finishes.',
+            'export_busy': True,
+        }), 503
     status = tts.status()
     if status['state'] != 'ready':
         return jsonify({'error': 'Model not ready', 'status': status}), 503
@@ -927,6 +932,11 @@ def preview_narrator(book_id):
     if not book:
         return jsonify({'error': 'Not found'}), 404
 
+    if _export_exclusive_active():
+        return jsonify({
+            'error': 'Export in progress — voice preview is paused until export finishes.',
+            'export_busy': True,
+        }), 503
     status = tts.status()
     if status['state'] != 'ready':
         return jsonify({'error': 'Model not ready', 'status': status}), 503
@@ -2301,6 +2311,16 @@ def save_settings():
     if 'tts_engine' in updates:
         engine = str(updates['tts_engine'] or 'omnivoice').strip().lower()
         updates['tts_engine'] = engine if engine in ('omnivoice', 'higgs') else 'omnivoice'
+        if (
+            updates['tts_engine'] != str(previous.get('tts_engine', 'omnivoice')).lower()
+            and _export_exclusive_active()
+        ):
+            # The router hot-swaps engines on the next status() call, which
+            # would kill the engine a running export is generating with.
+            return jsonify({
+                'error': 'An export or chapter generation is running — '
+                         'the TTS engine cannot be switched until it finishes.',
+            }), 409
     if 'higgs_model_source' in updates:
         source = str(updates['higgs_model_source'] or 'download').strip().lower()
         updates['higgs_model_source'] = source if source in ('local', 'download') else 'download'
@@ -2478,6 +2498,12 @@ def download_progress():
 
 @app.route('/api/settings/tts-reload', methods=['POST'])
 def tts_reload():
+    if _export_exclusive_active():
+        return jsonify({
+            'ok': False,
+            'error': 'An export or chapter generation is running — '
+                     'reload the TTS engine after it finishes.',
+        }), 409
     tts.reload()
     return jsonify({'ok': True})
 
