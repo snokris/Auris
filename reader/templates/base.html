@@ -39,6 +39,9 @@
 async function pollModelStatus() {
   const badge = document.getElementById('model-badge');
   if (!badge) return;
+  // Poll forever: the engine can regress from ready (server restart, engine
+  // switch, unload for character analysis), so a frozen green dot would lie.
+  let delay = 3000;
   try {
     const r = await fetch('/api/tts/status');
     const s = await r.json();
@@ -48,7 +51,7 @@ async function pollModelStatus() {
       badge.textContent = 'TTS Ready';
       badge.classList.add('badge-ready');
       badge.title = 'TTS Ready';
-      return;
+      delay = 10000;  // relaxed heartbeat once ready
     } else if (s.state === 'loading') {
       badge.textContent = 'TTS Loading';
       badge.classList.add('badge-loading');
@@ -57,14 +60,14 @@ async function pollModelStatus() {
       badge.textContent = 'TTS Error';
       badge.classList.add('badge-error');
       badge.title = 'TTS Error: ' + (s.message || '');
-      return;
+      delay = 10000;
     } else {
       badge.textContent = s.model_exists ? 'TTS Idle' : 'Model Missing';
       badge.classList.add(s.model_exists ? 'badge-idle' : 'badge-error');
       badge.title = badge.textContent;
     }
   } catch(e) { /* ignore */ }
-  setTimeout(pollModelStatus, 3000);
+  setTimeout(pollModelStatus, delay);
 }
 pollModelStatus();
 </script>

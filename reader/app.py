@@ -1740,6 +1740,20 @@ def _run_chapter_generation(job_id: str, book_id: int, chapter_id: int) -> None:
                 _chapter_generation_active_job_id = None
 
 
+def _tts_not_ready_response():
+    """Return a 503 response if the TTS engine is not ready, else None.
+
+    Also kicks off ``load_async()`` so a client with a stale status display
+    (or a request arriving right after a server restart) starts the model
+    loading instead of getting 503 forever.
+    """
+    if tts.status()['state'] == 'ready':
+        return None
+    if not _character_analysis_is_active():
+        tts.load_async()
+    return jsonify({'error': 'TTS model not ready', 'status': tts.status()}), 503
+
+
 @app.route(
     '/api/books/<int:book_id>/chapters/<int:chapter_id>/generate',
     methods=['GET'],
@@ -1795,8 +1809,9 @@ def generate_chapter_audio(book_id, chapter_id):
 
     if _export_exclusive_active():
         return jsonify({'error': 'Audio generation or export is already running.'}), 409
-    if tts.status()['state'] != 'ready':
-        return jsonify({'error': 'TTS model not ready'}), 503
+    not_ready = _tts_not_ready_response()
+    if not_ready:
+        return not_ready
 
     segs = _get_chapter_segments(chapter_id, book_id)
     ready, total = _chapter_audio_counts(segs)
@@ -2038,8 +2053,9 @@ def export_chapter(book_id, chapter_id):
     audio_fmt = body.get('audio_fmt', 'wav')
     sub_fmt = _resolve_sub_fmt(book_id, body.get('sub_fmt', 'srt'))
 
-    if tts.status()['state'] != 'ready':
-        return jsonify({'error': 'TTS model not ready'}), 503
+    not_ready = _tts_not_ready_response()
+    if not_ready:
+        return not_ready
 
     with _chapter_generation_lock:
         active_id = _chapter_generation_active_job_id
@@ -2061,8 +2077,9 @@ def export_full(book_id):
     audio_fmt = body.get('audio_fmt', 'wav')
     sub_fmt = _resolve_sub_fmt(book_id, body.get('sub_fmt', 'srt'))
 
-    if tts.status()['state'] != 'ready':
-        return jsonify({'error': 'TTS model not ready'}), 503
+    not_ready = _tts_not_ready_response()
+    if not_ready:
+        return not_ready
 
     with get_conn() as conn:
         chapter_count = conn.execute(
@@ -2089,8 +2106,9 @@ def export_chapterwise(book_id):
     audio_fmt = body.get('audio_fmt', 'wav')
     sub_fmt = _resolve_sub_fmt(book_id, body.get('sub_fmt', 'srt'))
 
-    if tts.status()['state'] != 'ready':
-        return jsonify({'error': 'TTS model not ready'}), 503
+    not_ready = _tts_not_ready_response()
+    if not_ready:
+        return not_ready
 
     with get_conn() as conn:
         chapter_count = conn.execute(

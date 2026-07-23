@@ -1035,7 +1035,14 @@ function formatExportStatus(sr) {
 }
 
 document.getElementById('export-btn').onclick = () => {
-  document.getElementById('export-dropdown').classList.toggle('hidden');
+  const dd = document.getElementById('export-dropdown');
+  dd.classList.toggle('hidden');
+  // Drop any stale status text (e.g. an old "TTS model not ready" error)
+  // when the panel is (re)opened outside of a running export.
+  if (!dd.classList.contains('hidden') && !_exportBusy) {
+    const status = document.getElementById('export-status');
+    if (status) status.textContent = '';
+  }
 };
 
 document.querySelectorAll('input[name="exp-mode"]').forEach(input => {
@@ -1084,19 +1091,39 @@ document.getElementById('do-export-btn').onclick = async () => {
     }, 2000);
   };
 
+  const postExport = () => fetch(url, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({
+      audio_fmt: audioFmt,
+      sub_fmt: subFmt,
+      chapters: mode === 'chapterwise'
+        ? document.getElementById('exp-chapters').value
+        : null,
+    }),
+  });
+
   try {
-    const r = await fetch(url, {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({
-        audio_fmt: audioFmt,
-        sub_fmt: subFmt,
-        chapters: mode === 'chapterwise'
-          ? document.getElementById('exp-chapters').value
-          : null,
-      }),
-    });
-    const d = await r.json();
+    let r = await postExport();
+    let d = await r.json();
+    if (d.error === 'TTS model not ready') {
+      // The server kicked off model loading — wait for it, then retry once.
+      status.textContent = 'TTS model is loading…';
+      const deadline = Date.now() + 15 * 60 * 1000;
+      while (Date.now() < deadline) {
+        await new Promise(res => setTimeout(res, 2000));
+        try {
+          const st = await fetch('/api/tts/status').then(x => x.json());
+          if (st.state === 'ready') break;
+          if (st.state === 'error') {
+            finish('TTS engine error: ' + (st.message || 'see terminal log'));
+            return;
+          }
+        } catch (_) {}
+      }
+      r = await postExport();
+      d = await r.json();
+    }
     if (d.error) { finish(d.error); return; }
 
     const jobId = d.job_id;
