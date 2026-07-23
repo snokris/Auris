@@ -437,7 +437,7 @@ def _detect_characters(
             full_text = ' '.join(ch['content'] for ch in data['chapters'])
             chars = char_module.extract_characters(full_text, top_n=20)
             _store_character_analysis(
-                book_id, chars, [], 'complete', 'Legacy detection complete.'
+                book_id, chars, [], 'complete', 'Characters detected.'
             )
         except Exception as exc:
             _set_character_analysis_status(book_id, 'failed', str(exc))

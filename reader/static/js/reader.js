@@ -10,7 +10,10 @@ let speedMultiplier = 1.0;
 let fontSize        = parseInt(localStorage.getItem('fontSize') || '18');
 let fontFamily      = localStorage.getItem('fontFamily') || 'serif';
 let lineHeight      = parseFloat(localStorage.getItem('lineHeight') || '1.9');
-let currentTheme    = localStorage.getItem('theme') || 'night';
+function normalizeTheme(t) {
+  return (t === 'dark' || t === 'night' || t === 'amoled') ? 'dark' : 'light';
+}
+let currentTheme    = normalizeTheme(localStorage.getItem('theme') || 'light');
 let _progressSaveTimer = null;
 let _scrollProgressTimer = null;
 let _lastSavedProgressKey = '';
@@ -130,11 +133,12 @@ function setCurrentSegment(idx, options = {}) {
 
 // ── Theme ─────────────────────────────────────────────────────────────────────
 
-const THEMES = ['night', 'sepia', 'paper', 'amoled'];
+const THEMES = ['light', 'dark'];
 
 function applyTheme(theme) {
-  THEMES.forEach(t => document.body.classList.remove('theme-' + t));
-  if (theme !== 'night') document.body.classList.add('theme-' + theme);
+  theme = normalizeTheme(theme);
+  document.body.classList.remove('theme-dark', 'theme-night', 'theme-sepia', 'theme-paper', 'theme-amoled');
+  if (theme === 'dark') document.body.classList.add('theme-dark');
   currentTheme = theme;
   localStorage.setItem('theme', theme);
 }
@@ -142,6 +146,12 @@ function applyTheme(theme) {
 function cycleTheme() {
   const next = THEMES[(THEMES.indexOf(currentTheme) + 1) % THEMES.length];
   applyTheme(next);
+  // Keep the server-side setting in sync so every page agrees on the theme.
+  fetch('/api/settings', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ theme: next }),
+  }).catch(() => {});
   showToast('Theme: ' + next.charAt(0).toUpperCase() + next.slice(1));
 }
 

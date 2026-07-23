@@ -120,11 +120,14 @@ DEFAULTS: dict = {
     'subtitle_format': 'ass',
 
     # UI
-    'theme': 'night',
+    'theme': 'light',
     'font_size': 18,
     'font_family': 'serif',
     'line_height': 1.9,
 }
+
+
+_LEGACY_THEMES = {'night': 'dark', 'amoled': 'dark', 'sepia': 'light', 'paper': 'light'}
 
 
 def load() -> dict:
@@ -137,6 +140,9 @@ def load() -> dict:
             narrator_instruct = str(merged.get('narrator_instruct') or '').strip().lower()
             if narrator_instruct in {'', LEGACY_NARRATOR_INSTRUCT.lower()}:
                 merged['narrator_instruct'] = DEFAULT_NARRATOR_INSTRUCT
+            theme = str(merged.get('theme') or 'light').strip().lower()
+            theme = _LEGACY_THEMES.get(theme, theme)
+            merged['theme'] = theme if theme in ('light', 'dark') else 'light'
             return merged
         except Exception:
             pass

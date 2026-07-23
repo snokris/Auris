@@ -446,10 +446,20 @@ async function loadVoicePresets() {
           .join("")
       : '<option value="">(no saved voices yet)</option>';
     select.disabled = !presets.length;
+    setVoicePresetButtonsEnabled(Boolean(presets.length));
   } catch (error) {
     select.innerHTML = '<option value="">(could not load presets)</option>';
     select.disabled = true;
+    setVoicePresetButtonsEnabled(false);
   }
+}
+
+function setVoicePresetButtonsEnabled(enabled) {
+  document
+    .querySelectorAll('button[onclick="applyVoicePreset()"], button[onclick="deleteVoicePreset()"]')
+    .forEach((btn) => {
+      btn.disabled = !enabled;
+    });
 }
 
 async function saveVoicePreset() {

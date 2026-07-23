@@ -136,8 +136,10 @@ async function loadSettings() {
 
   refreshAccelStatus();
 
-  // UI — theme
-  selectTheme(_settings.theme || 'night', false);
+  // UI — theme. The browser-local value wins for display (the reader's
+  // theme toggle writes it), so the page never flips away from what the
+  // user is actually seeing; the server value is the fallback.
+  selectTheme(localStorage.getItem('theme') || _settings.theme || 'light', false);
 
   // UI — font family
   selectFontFamily(_settings.font_family || 'serif', false);
@@ -161,18 +163,15 @@ async function loadSettings() {
 // ── Theme selection ───────────────────────────────────────────────────────────
 
 function selectTheme(theme, persist = true) {
+  theme = (theme === 'dark' || theme === 'night' || theme === 'amoled') ? 'dark' : 'light';
   document.getElementById('theme-select').value = theme;
   document.querySelectorAll('.theme-swatch').forEach(el => {
     el.classList.toggle('active', el.dataset.theme === theme);
   });
-  // Apply immediately to body
-  ['night', 'sepia', 'paper', 'amoled'].forEach(t =>
-    document.body.classList.remove('theme-' + t)
-  );
-  if (theme !== 'night') document.body.classList.add('theme-' + theme);
+  document.body.classList.remove('theme-dark', 'theme-night', 'theme-sepia', 'theme-paper', 'theme-amoled');
+  if (theme === 'dark') document.body.classList.add('theme-dark');
   if (persist) {
     localStorage.setItem('theme', theme);
-    markSettingsDirty();
   }
 }
 
