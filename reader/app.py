@@ -8,6 +8,7 @@ import os
 import shutil
 import sqlite3
 import threading
+import time
 import uuid
 
 from flask import (
@@ -634,7 +635,12 @@ def book_cover(book_id):
 def delete_book(book_id):
     with get_conn() as conn:
         conn.execute('DELETE FROM books WHERE id=?', (book_id,))
-    return jsonify({'ok': True})
+    removed = {'removed_files': 0, 'removed_bytes': 0}
+    if not _export_exclusive_active():
+        # The book's segments are gone (cascade), so its cached audio just
+        # became orphaned — sweep it now instead of letting the cache grow.
+        removed = _cleanup_orphan_audio_cache()
+    return jsonify({'ok': True, **removed})
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -2226,6 +2232,103 @@ def export_download():
     if not os.path.exists(abs_path):
         return 'Not found', 404
     return send_file(abs_path, as_attachment=True)
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# Audio cache management
+# ════════════════════════════════════════════════════════════════════════════
+
+def _audio_cache_scan() -> dict:
+    """Scan the audio cache and classify files as referenced or orphaned.
+
+    A file is an orphan when no tts_segment of any book references it —
+    typically leftovers from deleted books or from generations made with
+    settings (voice, engine, num_step) that are no longer in use.
+    """
+    from core.tts_engine import AUDIO_CACHE_DIR
+
+    referenced: set[str] = set()
+    with get_conn() as conn:
+        rows = conn.execute(
+            'SELECT DISTINCT audio_path FROM tts_segments '
+            'WHERE audio_path IS NOT NULL'
+        ).fetchall()
+    for row in rows:
+        path = row['audio_path']
+        if isinstance(path, str) and path.strip():
+            referenced.add(os.path.basename(path))
+
+    total_files = total_bytes = orphan_files = orphan_bytes = 0
+    orphan_paths: list[str] = []
+    try:
+        entries = list(os.scandir(AUDIO_CACHE_DIR))
+    except FileNotFoundError:
+        entries = []
+    for entry in entries:
+        if not entry.is_file() or not entry.name.endswith('.wav'):
+            continue
+        try:
+            size = entry.stat().st_size
+        except OSError:
+            continue
+        total_files += 1
+        total_bytes += size
+        if entry.name not in referenced:
+            orphan_files += 1
+            orphan_bytes += size
+            orphan_paths.append(entry.path)
+    return {
+        'total_files': total_files,
+        'total_bytes': total_bytes,
+        'orphan_files': orphan_files,
+        'orphan_bytes': orphan_bytes,
+        'orphan_paths': orphan_paths,
+    }
+
+
+_CACHE_CLEANUP_MIN_AGE_SEC = 3600
+
+
+def _cleanup_orphan_audio_cache() -> dict:
+    """Delete orphaned cache files older than an hour. Returns removal stats.
+
+    The age guard protects a file whose DB row is being written concurrently
+    (interactive playback can generate between our DB read and dir scan).
+    """
+    scan = _audio_cache_scan()
+    now = time.time()
+    removed_files = removed_bytes = 0
+    for path in scan['orphan_paths']:
+        try:
+            stat = os.stat(path)
+            if now - stat.st_mtime < _CACHE_CLEANUP_MIN_AGE_SEC:
+                continue
+            os.remove(path)
+            removed_files += 1
+            removed_bytes += stat.st_size
+        except OSError as exc:
+            log.warning('Unable to delete cache file %s: %s', path, exc)
+    return {'removed_files': removed_files, 'removed_bytes': removed_bytes}
+
+
+@app.route('/api/cache/audio')
+def audio_cache_stats():
+    scan = _audio_cache_scan()
+    scan.pop('orphan_paths', None)
+    return jsonify(scan)
+
+
+@app.route('/api/cache/audio/cleanup', methods=['POST'])
+def audio_cache_cleanup():
+    if _export_exclusive_active():
+        return jsonify({
+            'error': 'An export or chapter generation is running — '
+                     'clean the cache after it finishes.',
+        }), 409
+    result = _cleanup_orphan_audio_cache()
+    scan = _audio_cache_scan()
+    scan.pop('orphan_paths', None)
+    return jsonify({'ok': True, **result, 'stats': scan})
 
 
 # ════════════════════════════════════════════════════════════════════════════

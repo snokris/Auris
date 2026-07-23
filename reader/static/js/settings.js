@@ -517,9 +517,60 @@ async function saveSettings() {
     localStorage.setItem('lineHeight', payload.line_height);
     setSettingsDirty(false);
   } else {
-    hint.textContent = 'Save failed.';
+    hint.textContent = d.error || 'Save failed.';
     hint.className   = 'status-hint status-error';
   }
+}
+
+// ── Audio cache ───────────────────────────────────────────────────────────────
+
+function formatBytes(bytes) {
+  if (!bytes) return '0 B';
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  let i = 0, v = bytes;
+  while (v >= 1024 && i < units.length - 1) { v /= 1024; i++; }
+  return `${v >= 10 || i === 0 ? Math.round(v) : v.toFixed(1)} ${units[i]}`;
+}
+
+async function loadCacheStats() {
+  try {
+    const s = await fetch('/api/cache/audio').then(r => r.json());
+    document.getElementById('cache-total').textContent =
+      `${formatBytes(s.total_bytes)} (${s.total_files} files)`;
+    document.getElementById('cache-orphans').textContent =
+      s.orphan_files
+        ? `${formatBytes(s.orphan_bytes)} (${s.orphan_files} files)`
+        : 'none';
+    document.getElementById('cache-cleanup-btn').disabled = !s.orphan_files;
+  } catch (_) { /* stats are cosmetic; ignore */ }
+}
+
+async function cleanupAudioCache() {
+  const hint = document.getElementById('cache-cleanup-hint');
+  const btn  = document.getElementById('cache-cleanup-btn');
+  if (!confirm('Remove cached audio files that no book references anymore?')) return;
+  btn.disabled = true;
+  hint.textContent = 'Cleaning…';
+  hint.className = 'status-hint';
+  try {
+    const r = await fetch('/api/cache/audio/cleanup', { method: 'POST' });
+    const d = await r.json();
+    if (!r.ok || d.error) {
+      hint.textContent = d.error || 'Cleanup failed.';
+      hint.className = 'status-hint status-error';
+      btn.disabled = false;
+      return;
+    }
+    hint.textContent = d.removed_files
+      ? `Removed ${d.removed_files} file(s), freed ${formatBytes(d.removed_bytes)}.`
+      : 'Nothing to remove (files newer than one hour are kept).';
+    hint.className = 'status-hint status-ok';
+  } catch (e) {
+    hint.textContent = 'Cleanup failed.';
+    hint.className = 'status-hint status-error';
+    btn.disabled = false;
+  }
+  loadCacheStats();
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -533,3 +584,4 @@ function esc(s) {
 document.querySelector('.settings-page').addEventListener('input', markSettingsDirty);
 document.querySelector('.settings-page').addEventListener('change', markSettingsDirty);
 loadSettings();
+loadCacheStats();

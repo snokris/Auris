@@ -462,6 +462,32 @@
     </div>
   </section>
 
+  <!-- Audio cache -->
+  <section class="settings-section">
+    <div class="settings-section-title">Audio Cache</div>
+    <p class="section-desc">
+      Generated speech is cached in <code>reader/audio_cache</code> so nothing is
+      ever synthesized twice — exports resume from it after an interruption.
+      Files no longer referenced by any book (deleted books, old voice or
+      quality settings) can be removed safely. Files newer than one hour are
+      always kept.
+    </p>
+    <div class="setting-row">
+      <label>Cache size</label>
+      <span id="cache-total" class="cache-stat">–</span>
+    </div>
+    <div class="setting-row">
+      <label>Unused files</label>
+      <span id="cache-orphans" class="cache-stat">–</span>
+    </div>
+    <div class="setting-row">
+      <button class="btn" type="button" id="cache-cleanup-btn" onclick="cleanupAudioCache()">
+        Remove unused files
+      </button>
+      <span id="cache-cleanup-hint" class="status-hint"></span>
+    </div>
+  </section>
+
   <div class="settings-footer">
     <button class="btn btn-primary" onclick="saveSettings()">Save Settings</button>
     <span id="save-hint" class="status-hint"></span>
