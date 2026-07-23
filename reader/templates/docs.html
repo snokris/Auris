@@ -17,6 +17,7 @@
         <a href="#export">Export és gyorsítótár</a>
         <a href="#performance">Teljesítmény</a>
         <a href="#troubleshooting">Hibaelhárítás</a>
+        <a href="#fork">A fork újdonságai</a>
       </nav>
       <div class="docs-side-note">
         <span class="docs-side-note-mark">i</span>
@@ -90,7 +91,7 @@
             <li>Fejezetes tartalomjegyzék, olvasási időbecslés és fejezet-progressz.</li>
             <li>Automatikusan mentett olvasási pozíció és folytatás a Library oldalról.</li>
             <li>Könyvjelzők létrehozása, listázása, megnyitása és törlése.</li>
-            <li>Night, Sepia, Paper és AMOLED téma; serif, sans-serif és monospace betű.</li>
+            <li>Világos (light) és sötét (dark) téma; serif, sans-serif és monospace olvasóbetű.</li>
             <li>Állítható betűméret, sorköz és felolvasási sebesség.</li>
           </ul>
         </div>
@@ -311,9 +312,10 @@
           <tbody>
             <tr><td><strong>Referenciahang + átirat</strong></td><td>Elsődleges, stabil voice clone mód.</td><td>Zero-shot voice clone; az átirat lényegesen javítja a hűséget. Az ideális kliphossz eltér az OmniVoice-tól: 5–30 mp.</td></tr>
             <tr><td><strong>Üres referenciaszöveg</strong></td><td>Whisperrel automatikusan átírhatja, lassabb és pontatlanabb lehet.</td><td>Átirat nélkül is futhat, de a pontos szöveg erősen ajánlott.</td></tr>
-            <tr><td><strong>Voice instruct</strong></td><td>Nem, kor, hangmagasság és akcentus alapján hangot tervez.</td><td>A hangazonosságot főként a referencia adja; Expressive módban pitch/whisper tokenné alakul.</td></tr>
+            <tr><td><strong>Voice instruct</strong></td><td>Nem, kor, hangmagasság és akcentus alapján hangot tervez. Az akcentuslistában „None (natural)” és „Hungarian” opció is választható; magyar felolvasáshoz a None ajánlott.</td><td>A hangazonosságot főként a referencia adja; Expressive módban pitch/whisper tokenné alakul.</td></tr>
             <tr><td><strong>Automatikus hang</strong></td><td>Referencia és instruct nélkül támogatott.</td><td>Referencia nélkül a modell saját hangkondicionálásával generál.</td></tr>
-            <tr><td><strong>Single narrator</strong></td><td colspan="2">Minden narrációt és párbeszédet ugyanazzal a narrátorhanggal olvas.</td></tr>
+            <tr><td><strong>Mentett hangok (Saved voices)</strong></td><td colspan="2">A narrátor aktuális referenciahangja (WAV + átirat) névvel elmenthető, és bármely könyvre egy kattintással alkalmazható. A preset törlése nem érinti az azt már használó könyveket.</td></tr>
+            <tr><td><strong>Single narrator</strong></td><td colspan="2">A Voice Studio tetején lévő kártyán kapcsolható. Bekapcsolva a narrátor olvas minden sort, a karakterdetektálás kikapcsol, a már felismert szereplők pedig törlődnek a könyvből; kikapcsolásakor a detektálás automatikusan újrafut.</td></tr>
           </tbody>
         </table>
       </div>
@@ -700,6 +702,35 @@
           <summary>Az MP3 export nem készül el</summary>
           <div><p>Az MP3 kódoláshoz ffmpeg szükséges a rendszer PATH-jában. A WAV export külső kódoló nélkül is működik.</p></div>
         </details>
+      </div>
+    </section>
+
+    <section class="docs-section docs-section-tinted" id="fork">
+      <div class="docs-section-heading">
+        <span class="docs-section-index">10</span>
+        <div>
+          <h2>A fork újdonságai (snokris/Auris)</h2>
+          <p>Ez a változat az eredeti Aurist Apple Silicon támogatással és hangminőség-javításokkal bővíti.</p>
+        </div>
+      </div>
+      <div class="docs-two-column">
+        <div>
+          <h3>Apple Silicon (MPS)</h3>
+          <ul class="docs-check-list">
+            <li>Mindkét motor a Metal GPU-n fut macOS-en, nem CPU-n.</li>
+            <li>OmniVoice float32-ben (a bfloat16 M-szérián a mondatkezdeteket csípte le), a Higgs a natív bfloat16-jában.</li>
+            <li>Vészkapcsolók: <code>AURIS_MPS_DTYPE=bf16</code> (OmniVoice), <code>AURIS_HIGGS_MPS_DTYPE=fp32</code> (Higgs).</li>
+            <li>A betöltési naplósor mutatja az eszközt és a pontosságot: <code>device=mps, dtype=…</code>.</li>
+          </ul>
+        </div>
+        <div>
+          <h3>Whisper-illesztett szegmensvágás</h3>
+          <ul class="docs-check-list">
+            <li>Az összevontan generált hang vágásait szóidőbélyegek jelölik ki, a vágás a szavak közti szünetbe, nullátmenetre kerül, élsimítással — nincs lecsípett mondatvég, áthallás vagy kattanás.</li>
+            <li>Beállítások: <strong>Split coalesced audio</strong> (Aligned ajánlott) és <strong>Alignment ASR model</strong> (alap: whisper-small; első használatkor töltődik le).</li>
+            <li>Hiba esetén automatikusan a régi, karakterarányos vágásra vált vissza.</li>
+          </ul>
+        </div>
       </div>
     </section>
 
