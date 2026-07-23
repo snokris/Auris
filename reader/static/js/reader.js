@@ -1031,6 +1031,9 @@ function formatExportStatus(sr) {
   ) {
     msg += ` · ~${formatDurationShort(sr.eta_sec)} left`;
   }
+  if (sr.state === 'running' && typeof sr.chapters_written === 'number' && sr.chapters_written > 0) {
+    msg += ` · ${sr.chapters_written} chapter file(s) written`;
+  }
   return msg;
 }
 

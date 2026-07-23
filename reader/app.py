@@ -2043,8 +2043,14 @@ def _run_chapterwise_export(
         job['done'] = 0
         job['message'] = f'Generating audio (0/{total})'
         export_pool = _start_export_pool(job)
-        total_failed = 0
-        first_error = None
+        # Incremental export: write each chapter's files as soon as that
+        # chapter's audio is complete, so cached chapters appear within
+        # seconds and progress is visible on disk during long runs.
+        colors = _get_char_colors(book_id)
+        exportable = [c for c in chapters_data if c['segments']]
+        number_width = exporter.chapter_number_width(exportable)
+        output_dir = exporter.book_export_dir(book['title'], book['author'])
+        written = 0
         for ch_data in chapters_data:
             chapter_failure = _ensure_audio_for_chapter(
                 book_id,
@@ -2054,28 +2060,36 @@ def _run_chapterwise_export(
                 export_pool=export_pool,
             )
             if chapter_failure and chapter_failure['failed']:
-                total_failed += chapter_failure['failed']
-                if first_error is None:
-                    first_error = chapter_failure['first_error']
-        if total_failed:
-            raise RuntimeError(
-                f'{total_failed} segments failed to synthesize '
-                f'(first error: {first_error}). No chapter files were written — '
-                'already generated audio is kept in the cache.'
+                raise RuntimeError(
+                    f"Chapter '{ch_data['chapter_title']}': "
+                    f"{chapter_failure['failed']} segments failed to synthesize "
+                    f"(first error: {chapter_failure['first_error']}). "
+                    f'{written} chapter file(s) were written before the error; '
+                    'generated audio is kept in the cache — run the export '
+                    'again to resume.'
+                )
+            if not ch_data['segments']:
+                continue
+            stem = exporter.chapter_file_stem(
+                int(ch_data['chapter_number']),
+                ch_data['chapter_title'],
+                number_width,
             )
-        job['message'] = 'Writing chapter files...'
-        colors = _get_char_colors(book_id)
-        result = exporter.export_chapter_folder(
-            book['title'],
-            [c for c in chapters_data if c['segments']],
-            colors, audio_fmt, sub_fmt,
-            author=book['author'],
-        )
+            exporter.export_single_chapter(
+                ch_data['chapter_title'],
+                book['title'],
+                ch_data['segments'],
+                colors, audio_fmt, sub_fmt,
+                output_dir=output_dir,
+                file_stem=stem,
+            )
+            written += 1
+            job['chapters_written'] = written
         job['state'] = 'complete'
         job['message'] = 'Done'
         job['result'] = {
-            'export_path': result['directory_path'],
-            'chapter_count': len(result['chapters']),
+            'export_path': output_dir,
+            'chapter_count': written,
         }
     except Exception as e:
         log.exception('Export job %s failed', job_id)

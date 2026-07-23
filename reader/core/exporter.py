@@ -299,6 +299,19 @@ def export_chapter_zip(
     return zip_path
 
 
+def chapter_number_width(chapters_data: list[dict]) -> int:
+    """Zero-pad width for numbered chapter file names."""
+    max_number = max(
+        (int(ch.get('chapter_number', 0)) for ch in chapters_data),
+        default=len(chapters_data),
+    )
+    return max(2, len(str(max_number)))
+
+
+def chapter_file_stem(number: int, title: str, number_width: int) -> str:
+    return f'{number:0{number_width}d}_{_safe_name(title)}'
+
+
 def export_chapter_folder(
     book_title: str,
     chapters_data: list[dict],
@@ -309,17 +322,13 @@ def export_chapter_folder(
 ) -> dict:
     """Write numbered chapter files beneath ``exports/<Author>/<Title>``."""
     output_dir = book_export_dir(book_title, author)
-    max_number = max(
-        (int(ch.get('chapter_number', 0)) for ch in chapters_data),
-        default=len(chapters_data),
-    )
-    number_width = max(2, len(str(max_number)))
+    number_width = chapter_number_width(chapters_data)
     files = []
 
     for fallback_number, chapter in enumerate(chapters_data, 1):
         number = int(chapter.get('chapter_number') or fallback_number)
         title = chapter['chapter_title']
-        stem = f'{number:0{number_width}d}_{_safe_name(title)}'
+        stem = chapter_file_stem(number, title, number_width)
         files.append(export_single_chapter(
             title,
             book_title,
