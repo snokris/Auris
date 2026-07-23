@@ -25,6 +25,7 @@ Ez a repó a [mp3pintyo/Auris](https://github.com/mp3pintyo/Auris) forkja, amely
 - **Mentett narrátorhangok (Voice presets)** — a Voice Studióban a könyv referenciahangja (WAV + átirat) névvel elmenthető, és bármely könyvre egy kattintással alkalmazható.
 - **Single narrator kártya** — a Voice Studio tetején kapcsolható az egynarrátoros mód: bekapcsolva a narrátor olvas mindent, a karakterdetektálás kikapcsol, a felismert szereplők törlődnek; kikapcsolva a detektálás automatikusan újrafut.
 - **Akcentusválasztó bővítés** — „None (natural)” és „Hungarian” opció a hangleírásokban (magyar felolvasáshoz az akcentusjelölés nélküli leírás ajánlott).
+- **Rendezett exportmappák** — minden export a `exports/Szerző/Cím/` mappába kerül (pl. `exports/Dan_Brown/A_titkok_titka/01_PROLÓGUS.mp3`), nem ömlesztve; ismeretlen szerzőnél a szerzőszint kimarad.
 
 ## Telepítés macOS-en (Apple Silicon)
 
