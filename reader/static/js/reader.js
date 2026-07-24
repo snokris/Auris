@@ -203,12 +203,14 @@ async function loadTOC() {
       ? `<span class="toc-section-badge">${esc(ch.section_type)}</span>` : '';
     const ready = Number(ch.audio_total) > 0 &&
       Number(ch.audio_ready) >= Number(ch.audio_total);
+    const partial = !ready && Number(ch.audio_ready) > 0;
     return `
       <div class="toc-item" data-id="${ch.id}" onclick="openChapter(${ch.id})">
         ${badge}
         <span class="toc-item-title">${esc(ch.title)}</span>
         <span class="toc-item-details">
           <span class="toc-item-meta">${wc}</span>
+          <span class="toc-audio-progress${partial ? '' : ' hidden'}">${partial ? `${ch.audio_ready}/${ch.audio_total}` : ''}</span>
           <span class="toc-ready-badge${ready ? '' : ' hidden'}">&#10003; Ready</span>
         </span>
       </div>`;
@@ -234,6 +236,54 @@ async function loadTOC() {
 
   loadBookmarks();
 }
+
+// ── TOC status auto-refresh ───────────────────────────────────────────────────
+// Keeps the per-chapter Ready badges and partial counts (n/m) live without a
+// page reload. Deliberately cheap: a single aggregate query per tick, 5 s
+// cadence only while bulk work runs (_exportBusy), 30 s when idle, and no
+// requests at all while the tab is hidden.
+
+function _updateTocStatuses(rows) {
+  for (const ch of rows) {
+    const item = document.querySelector(`.toc-item[data-id="${ch.id}"]`);
+    if (!item) continue;
+    const ready = Number(ch.audio_total) > 0 &&
+      Number(ch.audio_ready) >= Number(ch.audio_total);
+    const partial = !ready && Number(ch.audio_ready) > 0;
+    const badge = item.querySelector('.toc-ready-badge');
+    if (badge) badge.classList.toggle('hidden', !ready);
+    const prog = item.querySelector('.toc-audio-progress');
+    if (prog) {
+      prog.classList.toggle('hidden', !partial);
+      prog.textContent = partial ? `${ch.audio_ready}/${ch.audio_total}` : '';
+    }
+  }
+}
+
+async function _refreshTocStatuses() {
+  try {
+    const rows = await fetch(`/api/books/${BOOK_ID}/chapters`).then(r => r.json());
+    if (Array.isArray(rows)) {
+      chapters = rows;
+      _updateTocStatuses(rows);
+    }
+  } catch (_) { /* transient — next tick retries */ }
+}
+
+function _tocStatusLoop(delay) {
+  // _exportBusy is declared later in this file; it is only read inside the
+  // timer callback, after the whole script has been evaluated.
+  setTimeout(async () => {
+    if (!document.hidden) await _refreshTocStatuses();
+    _tocStatusLoop(_exportBusy ? 5000 : 30000);
+  }, delay);
+}
+_tocStatusLoop(5000);
+
+// Catch up immediately when the user returns to the tab.
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) _refreshTocStatuses();
+});
 
 async function openChapter(chapterId, options = {}) {
   const {
