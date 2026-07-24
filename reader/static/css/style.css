@@ -554,9 +554,9 @@ code {
 .chapter-generate-status {
   min-height: 1.2em;
   margin-top: 7px;
-  color: var(--text3);
+  color: var(--text);
   font-family: 'Courier New', monospace;
-  font-size: .66rem;
+  font-size: .8rem;
   line-height: 1.35;
 }
 .chapter-generate-card.complete {
