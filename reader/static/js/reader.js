@@ -940,7 +940,11 @@ document.getElementById('toc-toggle').onclick = toggleTOC;
 document.getElementById('toc-close').onclick = toggleTOC;
 
 function toggleBookmarkPanel() {
-  document.getElementById('bookmarks-panel').classList.toggle('collapsed');
+  const panel = document.getElementById('bookmarks-panel');
+  if (panel.classList.contains('collapsed')) {
+    document.getElementById('export-panel').classList.add('collapsed');
+  }
+  panel.classList.toggle('collapsed');
 }
 
 // ── Progress persistence ──────────────────────────────────────────────────────
@@ -1087,16 +1091,21 @@ function formatExportStatus(sr) {
   return msg;
 }
 
-document.getElementById('export-btn').onclick = () => {
-  const dd = document.getElementById('export-dropdown');
-  dd.classList.toggle('hidden');
-  // Drop any stale status text (e.g. an old "TTS model not ready" error)
-  // when the panel is (re)opened outside of a running export.
-  if (!dd.classList.contains('hidden') && !_exportBusy) {
-    const status = document.getElementById('export-status');
-    if (status) status.textContent = '';
+function toggleExportPanel() {
+  const panel = document.getElementById('export-panel');
+  const opening = panel.classList.contains('collapsed');
+  panel.classList.toggle('collapsed');
+  if (opening) {
+    document.getElementById('bookmarks-panel').classList.add('collapsed');
+    // Drop any stale status text (e.g. an old "TTS model not ready" error)
+    // when the panel is (re)opened outside of a running export.
+    if (!_exportBusy) {
+      const status = document.getElementById('export-status');
+      if (status) status.textContent = '';
+    }
   }
-};
+}
+document.getElementById('export-btn').onclick = toggleExportPanel;
 
 document.querySelectorAll('input[name="exp-mode"]').forEach(input => {
   input.addEventListener('change', () => {
@@ -1276,12 +1285,15 @@ document.addEventListener('keydown', e => {
     case 'm': case 'M':
       toggleBookmarkPanel();
       break;
+    case 'e': case 'E':
+      toggleExportPanel();
+      break;
     case '?':
       showShortcuts();
       break;
     case 'Escape':
       hideShortcuts();
-      document.getElementById('export-dropdown').classList.add('hidden');
+      document.getElementById('export-panel').classList.add('collapsed');
       break;
   }
 });
