@@ -1248,6 +1248,8 @@ document.getElementById('do-export-btn').onclick = async () => {
 document.addEventListener('keydown', e => {
   const tag = document.activeElement.tagName.toLowerCase();
   if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
+  // Never hijack system shortcuts (Cmd+C copy, Ctrl+B, Alt combos, …).
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
 
   switch(e.key) {
     case ' ':
