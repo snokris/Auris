@@ -134,9 +134,22 @@ def init_db():
             chapters   TEXT,
             audio_fmt  TEXT NOT NULL,
             sub_fmt    TEXT NOT NULL,
+            status     TEXT,
             updated_at TEXT DEFAULT (datetime('now'))
         );
         """)
+
+        export_cols = {
+            row["name"]
+            for row in conn.execute("PRAGMA table_info(export_prefs)").fetchall()
+        }
+        if "status" not in export_cols:
+            conn.execute("ALTER TABLE export_prefs ADD COLUMN status TEXT")
+        # A crash or shutdown while exporting behaves like Pause: the export
+        # can be continued from the cache after restart.
+        conn.execute(
+            "UPDATE export_prefs SET status='paused' WHERE status='running'"
+        )
 
         cols = {
             row["name"]

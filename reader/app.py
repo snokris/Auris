@@ -581,10 +581,12 @@ def list_books():
             'b.last_read, b.total_chapters, b.character_analysis_status, '
             'b.character_analysis_message, b.character_analysis_provider, '
             'b.character_analysis_model, rp.chapter_id AS progress_chapter_id, '
-            'rp.position AS progress_position, c.title AS progress_chapter_title '
+            'rp.position AS progress_position, c.title AS progress_chapter_title, '
+            'ep.status AS export_status '
             'FROM books b '
             'LEFT JOIN reading_progress rp ON rp.book_id = b.id '
             'LEFT JOIN chapters c ON c.id = rp.chapter_id '
+            'LEFT JOIN export_prefs ep ON ep.book_id = b.id '
             'ORDER BY COALESCE(b.last_read, b.added_at) DESC, b.added_at DESC'
         ).fetchall()
     books = []
@@ -1595,8 +1597,14 @@ def _ensure_audio_for_chapter(
     try:
         def on_item(local_i: int, result: dict) -> None:
             _apply_result(local_i, result)
+            # Cooperative Pause/Stop: takes effect after the current
+            # utterance (Higgs) or GPU pack member (OmniVoice).
+            _check_export_control(job)
 
         def on_status(msg: str) -> None:
+            # Fires when each GPU pack starts — check Pause/Stop here so a
+            # slow pack can be skipped rather than waiting for it to finish.
+            _check_export_control(job)
             if job is None:
                 return
             with result_lock:
@@ -1620,6 +1628,10 @@ def _ensure_audio_for_chapter(
                 on_item=on_item,
                 on_status=on_status,
             )
+    except _ExportInterrupted:
+        with result_lock:
+            _flush_db(force=True)
+        raise
     except Exception as e:
         if export_pool is not None and export_pool.worker_count > 1:
             export_pool.close()
@@ -1631,6 +1643,12 @@ def _ensure_audio_for_chapter(
         failure['first_error'] = str(e)
         fallback_ok = 0
         for local_i, item in enumerate(pending_items):
+            try:
+                _check_export_control(job)
+            except _ExportInterrupted:
+                with result_lock:
+                    _flush_db(force=True)
+                raise
             # Skip items already filled by a partial batch before the exception.
             if segs[pending_idx[local_i]].get('audio_path') and os.path.exists(
                 segs[pending_idx[local_i]]['audio_path']
@@ -1989,6 +2007,54 @@ def _save_export_prefs(book_id: int, mode: str, chapters, audio_fmt: str, sub_fm
         )
 
 
+class _ExportInterrupted(BaseException):
+    """Raised inside an export job when Pause or Stop was requested.
+
+    Subclasses BaseException (not Exception) on purpose: the TTS engine wraps
+    every progress callback in ``try/except Exception: pass``, so an ordinary
+    exception raised from a control check would be swallowed. As BaseException
+    it propagates cleanly out of a mid-pack callback up to the job runner.
+    """
+
+    def __init__(self, action: str):
+        super().__init__(action)
+        self.action = action
+
+
+def _set_export_status(book_id: int, status: str | None):
+    with get_conn() as conn:
+        conn.execute(
+            'UPDATE export_prefs SET status=? WHERE book_id=?', (status, book_id)
+        )
+
+
+def _active_export_row(exclude_book: int | None = None):
+    """The single book (app-wide) whose export is running or paused, if any."""
+    with get_conn() as conn:
+        rows = conn.execute(
+            'SELECT ep.book_id, ep.status, b.title FROM export_prefs ep '
+            'JOIN books b ON b.id = ep.book_id '
+            "WHERE ep.status IN ('running', 'paused')"
+        ).fetchall()
+    for row in rows:
+        if exclude_book is None or row['book_id'] != exclude_book:
+            return row
+    return None
+
+
+def _find_running_export_job(book_id: int) -> dict | None:
+    for job in _export_jobs.values():
+        if job.get('book_id') == book_id and job.get('state') in ('pending', 'running'):
+            return job
+    return None
+
+
+def _check_export_control(job: dict | None):
+    action = (job or {}).get('control')
+    if action in ('pause', 'stop'):
+        raise _ExportInterrupted(action)
+
+
 def _run_chapter_export(job_id: str, book_id: int, chapter_id: int, audio_fmt: str, sub_fmt: str):
     job = _export_jobs[job_id]
     export_pool: TTSExportPool | None = None
@@ -2033,10 +2099,21 @@ def _run_chapter_export(job_id: str, book_id: int, chapter_id: int, audio_fmt: s
             'audio_download': f'/api/export/download?path={result["audio_path"]}',
             'subtitle_download': f'/api/export/download?path={result["subtitle_path"]}',
         }
+        _set_export_status(book_id, None)
+    except _ExportInterrupted as interrupt:
+        if interrupt.action == 'pause':
+            job['state'] = 'paused'
+            job['message'] = f"Paused ({job.get('done', 0)}/{job.get('total', 0)})"
+            _set_export_status(book_id, 'paused')
+        else:
+            job['state'] = 'stopped'
+            job['message'] = f"Stopped ({job.get('done', 0)}/{job.get('total', 0)})"
+            _set_export_status(book_id, None)
     except Exception as e:
         log.exception('Export job %s failed', job_id)
         job['state'] = 'failed'
         job['error'] = str(e)
+        _set_export_status(book_id, 'paused')  # resumable via Continue
     finally:
         if export_pool is not None:
             export_pool.close()
@@ -2087,6 +2164,7 @@ def _run_chapterwise_export(
         output_dir = exporter.book_export_dir(book['title'], book['author'])
         written = 0
         for ch_data in chapters_data:
+            _check_export_control(job)
             job['chapter_title'] = ch_data['chapter_title']
             job['chapter_total'] = len(ch_data['segments'])
             job['chapter_done'] = 0
@@ -2129,10 +2207,21 @@ def _run_chapterwise_export(
             'export_path': output_dir,
             'chapter_count': written,
         }
+        _set_export_status(book_id, None)
+    except _ExportInterrupted as interrupt:
+        if interrupt.action == 'pause':
+            job['state'] = 'paused'
+            job['message'] = f"Paused ({job.get('done', 0)}/{job.get('total', 0)})"
+            _set_export_status(book_id, 'paused')
+        else:
+            job['state'] = 'stopped'
+            job['message'] = f"Stopped ({job.get('done', 0)}/{job.get('total', 0)})"
+            _set_export_status(book_id, None)
     except Exception as e:
         log.exception('Export job %s failed', job_id)
         job['state'] = 'failed'
         job['error'] = str(e)
+        _set_export_status(book_id, 'paused')  # resumable via Continue
     finally:
         if export_pool is not None:
             export_pool.close()
@@ -2152,6 +2241,14 @@ def export_chapter(book_id, chapter_id):
     audio_fmt = body.get('audio_fmt', 'wav')
     sub_fmt = _resolve_sub_fmt(book_id, body.get('sub_fmt', 'srt'))
 
+    other = _active_export_row(exclude_book=book_id)
+    if other:
+        return jsonify({
+            'error': f'An export is already active for “{other["title"]}” — '
+                     'stop it there first.',
+            'active_book_id': other['book_id'],
+        }), 409
+
     not_ready = _tts_not_ready_response()
     if not_ready:
         return not_ready
@@ -2163,6 +2260,7 @@ def export_chapter(book_id, chapter_id):
             return jsonify({'error': 'Chapter audio generation is already running.'}), 409
         job_id, _ = _make_export_job(book_id)
     _save_export_prefs(book_id, 'chapter', None, audio_fmt, sub_fmt)
+    _set_export_status(book_id, 'running')
     threading.Thread(
         target=_run_chapter_export,
         args=(job_id, book_id, chapter_id, audio_fmt, sub_fmt),
@@ -2206,6 +2304,14 @@ def export_chapterwise(book_id):
     audio_fmt = body.get('audio_fmt', 'wav')
     sub_fmt = _resolve_sub_fmt(book_id, body.get('sub_fmt', 'srt'))
 
+    other = _active_export_row(exclude_book=book_id)
+    if other:
+        return jsonify({
+            'error': f'An export is already active for “{other["title"]}” — '
+                     'stop it there first.',
+            'active_book_id': other['book_id'],
+        }), 409
+
     not_ready = _tts_not_ready_response()
     if not_ready:
         return not_ready
@@ -2230,12 +2336,34 @@ def export_chapterwise(book_id):
     _save_export_prefs(
         book_id, 'chapterwise', body.get('chapters'), audio_fmt, sub_fmt
     )
+    _set_export_status(book_id, 'running')
     threading.Thread(
         target=_run_chapterwise_export,
         args=(job_id, book_id, audio_fmt, sub_fmt, chapter_numbers),
         daemon=True,
     ).start()
     return jsonify({'job_id': job_id})
+
+
+@app.route('/api/books/<int:book_id>/export/pause', methods=['POST'])
+def export_pause(book_id):
+    job = _find_running_export_job(book_id)
+    if job:
+        job['control'] = 'pause'
+        return jsonify({'ok': True, 'state': 'pausing'})
+    # No live job (e.g. already paused after a restart) — just mark it paused.
+    _set_export_status(book_id, 'paused')
+    return jsonify({'ok': True, 'state': 'paused'})
+
+
+@app.route('/api/books/<int:book_id>/export/stop', methods=['POST'])
+def export_stop(book_id):
+    job = _find_running_export_job(book_id)
+    if job:
+        job['control'] = 'stop'
+        return jsonify({'ok': True, 'state': 'stopping'})
+    _set_export_status(book_id, None)
+    return jsonify({'ok': True, 'state': 'stopped'})
 
 
 @app.route('/api/books/<int:book_id>/export/state')
@@ -2248,7 +2376,7 @@ def export_state(book_id):
     """
     with get_conn() as conn:
         prefs_row = conn.execute(
-            'SELECT mode, chapters, audio_fmt, sub_fmt, updated_at '
+            'SELECT mode, chapters, audio_fmt, sub_fmt, status, updated_at '
             'FROM export_prefs WHERE book_id=?', (book_id,)
         ).fetchone()
         counts = conn.execute(
@@ -2284,11 +2412,28 @@ def export_state(book_id):
             _refresh_export_job_fields(job)
             active = job
             break
+
+    # The persisted status is the source of truth across restarts:
+    #   running → a job should be live (if not, it crashed → treat as paused)
+    #   paused  → resumable via Continue
+    #   None    → idle
+    status = prefs['status'] if prefs else None
+    if status == 'running' and active is None:
+        status = 'paused'
+        _set_export_status(book_id, 'paused')
+
+    # Which OTHER book (if any) currently owns the single export slot.
+    other = _active_export_row(exclude_book=book_id)
     return jsonify({
         'prefs': prefs,
         'active_job': active,
+        'status': status,
         'ready': ready,
         'total': total,
+        'locked_by': (
+            {'book_id': other['book_id'], 'title': other['title']}
+            if other else None
+        ),
     })
 
 

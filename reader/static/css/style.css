@@ -430,6 +430,21 @@ code {
   font-family: 'Courier New', monospace; text-transform: uppercase;
   letter-spacing: 0.08em; backdrop-filter: blur(4px);
 }
+.book-export-badge {
+  position: absolute; top: 8px; left: 8px;
+  font-size: 0.6rem; padding: 2px 7px; border-radius: 3px;
+  font-family: 'Courier New', monospace; letter-spacing: 0.05em;
+  font-weight: 600; backdrop-filter: blur(4px);
+}
+.book-export-badge.running {
+  background: var(--accent); color: #fff;
+  animation: rail-pulse 1.4s ease-in-out infinite;
+}
+.book-export-badge.paused {
+  background: color-mix(in srgb, var(--accent) 20%, var(--card));
+  color: var(--accent); border: 1px solid var(--accent);
+}
+.book-card.has-export { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 .book-info { padding: 10px 12px; flex: 1; }
 .book-title {
@@ -840,6 +855,21 @@ code {
   margin: 4px 0 10px; overflow: hidden; display: none;
 }
 .export-progress-wrap.active { display: block; }
+.export-settings { border: none; padding: 0; margin: 0; min-width: 0; }
+.export-settings[disabled] { opacity: 0.5; }
+.export-controls { display: flex; flex-direction: column; gap: 8px; }
+.export-controls .btn { font-size: 0.85rem; }
+.btn-danger {
+  background: color-mix(in srgb, #c0392b 15%, var(--card));
+  color: #c0392b; border: 1px solid color-mix(in srgb, #c0392b 40%, transparent);
+}
+.btn-danger:hover { background: color-mix(in srgb, #c0392b 25%, var(--card)); }
+.export-locked-notice {
+  padding: 10px 12px; margin-bottom: 14px; border-radius: 8px;
+  background: color-mix(in srgb, var(--accent) 12%, var(--card));
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+  color: var(--text); font-size: 0.82rem; line-height: 1.4;
+}
 .export-status-block {
   margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border);
 }

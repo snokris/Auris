@@ -79,30 +79,44 @@
       <button class="btn btn-sm btn-ghost" onclick="toggleExportPanel()">&#215;</button>
     </div>
     <div class="export-panel-body">
-      <div class="export-section">
-        <b>Scope</b>
-        <label><input type="radio" name="exp-mode" value="chapter" checked> This chapter</label>
-        <label><input type="radio" name="exp-mode" value="chapterwise"> Selected chapters</label>
-        <div id="chapter-selection-wrap" class="chapter-selection hidden">
-          <label for="exp-chapters">Chapters</label>
-          <input id="exp-chapters" type="text" value="all"
-                 placeholder="all or 1,3,5-8" autocomplete="off">
-          <small>Use all, a range, or comma-separated numbers.</small>
+      <!-- Locked notice: another book owns the single export slot -->
+      <div id="export-locked-notice" class="export-locked-notice hidden"></div>
+
+      <!-- Settings: disabled while an export is active for this book -->
+      <fieldset id="export-settings" class="export-settings">
+        <div class="export-section">
+          <b>Scope</b>
+          <label><input type="radio" name="exp-mode" value="chapter" checked> This chapter</label>
+          <label><input type="radio" name="exp-mode" value="chapterwise"> Selected chapters</label>
+          <div id="chapter-selection-wrap" class="chapter-selection hidden">
+            <label for="exp-chapters">Chapters</label>
+            <input id="exp-chapters" type="text" value="all"
+                   placeholder="all or 1,3,5-8" autocomplete="off">
+            <small>Use all, a range, or comma-separated numbers.</small>
+          </div>
         </div>
-      </div>
-      <div class="export-section">
-        <b>Audio</b>
-        <label><input type="radio" name="exp-audio" value="wav" checked> WAV (lossless)</label>
-        <label><input type="radio" name="exp-audio" value="mp3"> MP3 (requires ffmpeg)</label>
-      </div>
-      <div class="export-section">
-        <b>Subtitles</b>
-        {% if not book.single_narrator_mode %}
-        <label><input type="radio" name="exp-sub" value="ass" checked> ASS (styled, per-character)</label>
-        {% endif %}
-        <label><input type="radio" name="exp-sub" value="srt"{% if book.single_narrator_mode %} checked{% endif %}> SRT (plain)</label>
-      </div>
+        <div class="export-section">
+          <b>Audio</b>
+          <label><input type="radio" name="exp-audio" value="wav" checked> WAV (lossless)</label>
+          <label><input type="radio" name="exp-audio" value="mp3"> MP3 (requires ffmpeg)</label>
+        </div>
+        <div class="export-section">
+          <b>Subtitles</b>
+          {% if not book.single_narrator_mode %}
+          <label><input type="radio" name="exp-sub" value="ass" checked> ASS (styled, per-character)</label>
+          {% endif %}
+          <label><input type="radio" name="exp-sub" value="srt"{% if book.single_narrator_mode %} checked{% endif %}> SRT (plain)</label>
+        </div>
+      </fieldset>
+
       <button class="btn btn-primary btn-full" id="do-export-btn">Generate export</button>
+
+      <!-- Running controls: only these are available once an export owns the book -->
+      <div id="export-controls" class="export-controls hidden">
+        <button class="btn btn-full" id="export-pause-btn">&#10073;&#10073; Pause</button>
+        <button class="btn btn-full" id="export-continue-btn">&#9654; Continue</button>
+        <button class="btn btn-full btn-danger" id="export-stop-btn">&#9632; Stop</button>
+      </div>
 
       <div class="export-status-block">
         <div class="export-bar-label">

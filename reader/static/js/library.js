@@ -37,10 +37,17 @@ async function loadBooks() {
             ? `<div class="book-progress-hint status-warn">${esc(b.character_analysis_message || 'Character analysis partially complete.')}</div>`
           : '';
 
+    const exportBadge = b.export_status === 'running'
+      ? `<span class="book-export-badge running" title="Export in progress for this book">● Exporting</span>`
+      : b.export_status === 'paused'
+        ? `<span class="book-export-badge paused" title="Export paused — continue in the reader">❙❙ Export paused</span>`
+        : '';
+
     return `
-    <div class="book-card" data-id="${b.id}">
+    <div class="book-card${b.export_status ? ' has-export' : ''}" data-id="${b.id}">
       <div class="book-cover">${coverHtml}</div>
       <span class="book-type-badge">${esc(b.file_type)}</span>
+      ${exportBadge}
       <div class="book-info">
         <div class="book-title">${esc(b.title)}</div>
         <div class="book-author">${esc(b.author || 'Unknown')}</div>

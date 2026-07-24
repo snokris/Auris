@@ -1132,20 +1132,43 @@ function _setExportChapterBar(sr) {
   }
 }
 
+// Panel UI modes: 'idle' | 'running' | 'paused' | 'locked'.
+function setExportUi(mode, opts = {}) {
+  const settings = document.getElementById('export-settings');
+  const doBtn    = document.getElementById('do-export-btn');
+  const controls = document.getElementById('export-controls');
+  const pauseBtn = document.getElementById('export-pause-btn');
+  const contBtn  = document.getElementById('export-continue-btn');
+  const stopBtn  = document.getElementById('export-stop-btn');
+  const locked   = document.getElementById('export-locked-notice');
+
+  locked.classList.toggle('hidden', mode !== 'locked');
+  if (mode === 'locked') {
+    locked.textContent = opts.message ||
+      'Another book is exporting. Stop that export before starting one here.';
+    settings.disabled = true;
+    doBtn.classList.add('hidden');
+    controls.classList.add('hidden');
+    return;
+  }
+
+  const running = mode === 'running';
+  const paused  = mode === 'paused';
+  settings.disabled = running || paused;
+  doBtn.classList.toggle('hidden', running || paused);
+  controls.classList.toggle('hidden', !(running || paused));
+  pauseBtn.classList.toggle('hidden', !running);
+  contBtn.classList.toggle('hidden', !paused);
+  stopBtn.classList.toggle('hidden', !(running || paused));
+  [pauseBtn, contBtn, stopBtn].forEach(b => { b.disabled = false; });
+  if (mode === 'idle') { doBtn.disabled = false; }
+}
+
 async function monitorExportJob(jobId) {
   const status = document.getElementById('export-status');
-  const doBtn = document.getElementById('do-export-btn');
   _exportBusy = true;
   _bufferGenId++;
-  doBtn.disabled = true;
-  doBtn.textContent = 'Generate export';
-
-  const finish = (msg) => {
-    _exportBusy = false;
-    status.textContent = msg;
-    doBtn.disabled = false;
-    _refreshTocStatuses();
-  };
+  setExportUi('running');
 
   // Client-side ETA fallback if server has not reported one yet.
   let clientT0 = Date.now();
@@ -1157,14 +1180,15 @@ async function monitorExportJob(jobId) {
     try { sr = await fetch(`/api/export/status/${jobId}`).then(r => r.json()); }
     catch (_) { continue; }
     if (sr.error && !sr.state) {
-      finish('Export job not found (app restarted?) — use Continue to resume.');
+      // Job object gone (app restarted) — fall back to the persistent state.
+      _exportBusy = false;
+      initExportPanelState();
       return;
     }
 
     if (sr.total > 0) _setExportBookBar(sr.done, sr.total);
     _setExportChapterBar(sr);
 
-    // Local ETA when server still estimating (e.g. first synth batch in flight).
     if (
       sr.state === 'running' &&
       sr.total > 0 &&
@@ -1196,13 +1220,36 @@ async function monitorExportJob(jobId) {
         if (res.audio_download)    window.open(res.audio_download);
         if (res.subtitle_download) setTimeout(() => window.open(res.subtitle_download), 500);
       }
-      finish(res.export_path
+      _exportBusy = false;
+      status.textContent = res.export_path
         ? `Done. ${res.chapter_count} chapter(s) saved to ${res.export_path}`
-        : 'Done. Downloading…');
+        : 'Done. Downloading…';
+      setExportUi('idle');
+      _refreshTocStatuses();
+      initExportPanelState();
+      return;
+    }
+    if (sr.state === 'paused') {
+      _exportBusy = false;
+      status.textContent = sr.message || 'Paused.';
+      setExportUi('paused');
+      _refreshTocStatuses();
+      return;
+    }
+    if (sr.state === 'stopped') {
+      _exportBusy = false;
+      _setExportChapterBar(null);
+      status.textContent = 'Export stopped.';
+      setExportUi('idle');
+      _refreshTocStatuses();
       return;
     }
     if (sr.state === 'failed') {
-      finish('Export failed: ' + (sr.error || 'Unknown error'));
+      // Server keeps it resumable (paused) so Continue can retry.
+      _exportBusy = false;
+      status.textContent = 'Export failed: ' + (sr.error || 'Unknown error');
+      setExportUi('paused');
+      _refreshTocStatuses();
       return;
     }
   }
@@ -1211,7 +1258,6 @@ async function monitorExportJob(jobId) {
 async function initExportPanelState() {
   try {
     const st = await fetch(`/api/books/${BOOK_ID}/export/state`).then(r => r.json());
-    const doBtn = document.getElementById('do-export-btn');
     const status = document.getElementById('export-status');
     if (st.prefs) {
       const m = document.querySelector(`input[name="exp-mode"][value="${st.prefs.mode}"]`);
@@ -1225,15 +1271,38 @@ async function initExportPanelState() {
       }
     }
     _setExportBookBar(st.ready || 0, st.total || 0);
+
+    // Another book owns the single export slot → lock this panel.
+    if (st.locked_by) {
+      setExportUi('locked', {
+        message: `An export is active for “${st.locked_by.title}”. ` +
+                 'Stop it there before exporting this book.',
+      });
+      status.textContent = '';
+      return;
+    }
+
     if (st.active_job && st.active_job.job_id) {
-      status.textContent = 'Export in progress — reattaching…';
+      status.textContent = 'Export in progress…';
       monitorExportJob(st.active_job.job_id);
-    } else if (st.prefs && st.total > 0 && st.ready > 0 && st.ready < st.total) {
-      doBtn.textContent = 'Continue export';
+      return;
+    }
+    if (st.status === 'paused') {
+      setExportUi('paused');
+      status.textContent = st.total > 0
+        ? `Paused at ${st.ready}/${st.total} segments — Continue resumes from the cache.`
+        : 'Export paused — Continue resumes from the cache.';
+      return;
+    }
+    // Idle.
+    setExportUi('idle');
+    if (st.prefs && st.total > 0 && st.ready > 0 && st.ready < st.total) {
       status.textContent =
-        `${st.ready}/${st.total} segments already generated — Continue resumes from the cache.`;
+        `${st.ready}/${st.total} segments already generated — export resumes from the cache.`;
     } else if (st.prefs && st.total > 0 && st.ready >= st.total) {
       status.textContent = 'All segments generated — exporting again only rewrites the files.';
+    } else {
+      status.textContent = '';
     }
   } catch (_) { /* panel stays in default state */ }
 }
@@ -1247,7 +1316,7 @@ document.querySelectorAll('input[name="exp-mode"]').forEach(input => {
   });
 });
 
-document.getElementById('do-export-btn').onclick = async () => {
+async function startExport() {
   if (!currentChapterId) { showToast('Open a chapter first.'); return; }
 
   const mode      = document.querySelector('input[name="exp-mode"]:checked').value;
@@ -1256,11 +1325,9 @@ document.getElementById('do-export-btn').onclick = async () => {
   const subFmt    = subInput ? subInput.value : 'srt';
 
   const status = document.getElementById('export-status');
-  const doBtn  = document.getElementById('do-export-btn');
 
-  doBtn.disabled = true;
+  setExportUi('running');
   status.textContent = 'Starting export…';
-  // Stop background single-segment prewarm so export can batch on the GPU.
   _exportBusy = true;
   _bufferGenId++;
   if (isPlaying) {
@@ -1271,10 +1338,11 @@ document.getElementById('do-export-btn').onclick = async () => {
   if (mode === 'chapter')          url = `/api/books/${BOOK_ID}/export/chapter/${currentChapterId}`;
   else                             url = `/api/books/${BOOK_ID}/export/chapterwise`;
 
-  const fail = (msg) => {
+  const fail = (msg, locked) => {
     _exportBusy = false;
     status.textContent = msg;
-    doBtn.disabled = false;
+    if (locked) setExportUi('locked', { message: msg });
+    else initExportPanelState();
   };
 
   const postExport = () => fetch(url, {
@@ -1293,16 +1361,15 @@ document.getElementById('do-export-btn').onclick = async () => {
     let r = await postExport();
     let d = await r.json();
     if (d.error === 'TTS model not ready') {
-      // The server kicked off model loading — wait for it, then retry once.
       status.textContent = 'TTS model is loading…';
       const deadline = Date.now() + 15 * 60 * 1000;
       while (Date.now() < deadline) {
         await new Promise(res => setTimeout(res, 2000));
         try {
-          const st = await fetch('/api/tts/status').then(x => x.json());
-          if (st.state === 'ready') break;
-          if (st.state === 'error') {
-            fail('TTS engine error: ' + (st.message || 'see terminal log'));
+          const stt = await fetch('/api/tts/status').then(x => x.json());
+          if (stt.state === 'ready') break;
+          if (stt.state === 'error') {
+            fail('TTS engine error: ' + (stt.message || 'see terminal log'));
             return;
           }
         } catch (_) {}
@@ -1310,10 +1377,39 @@ document.getElementById('do-export-btn').onclick = async () => {
       r = await postExport();
       d = await r.json();
     }
-    if (d.error) { fail(d.error); return; }
+    if (d.error) { fail(d.error, r.status === 409 && d.active_book_id); return; }
     await monitorExportJob(d.job_id);
   } catch (e) {
     fail(e.message);
+  }
+}
+
+document.getElementById('do-export-btn').onclick = startExport;
+document.getElementById('export-continue-btn').onclick = startExport;
+
+document.getElementById('export-pause-btn').onclick = async () => {
+  const btn = document.getElementById('export-pause-btn');
+  btn.disabled = true;
+  document.getElementById('export-status').textContent = 'Pausing after the current segment…';
+  try { await fetch(`/api/books/${BOOK_ID}/export/pause`, { method: 'POST' }); }
+  catch (_) { btn.disabled = false; }
+  // monitorExportJob observes state='paused' and switches the UI.
+};
+
+document.getElementById('export-stop-btn').onclick = async () => {
+  if (!confirm('Stop this export? Progress stays in the cache, but the panel resets to idle.')) return;
+  const btn = document.getElementById('export-stop-btn');
+  btn.disabled = true;
+  document.getElementById('export-status').textContent = 'Stopping…';
+  try {
+    await fetch(`/api/books/${BOOK_ID}/export/stop`, { method: 'POST' });
+  } catch (_) {}
+  // If we were only paused (no live monitor loop), reflect the reset now.
+  if (!_exportBusy) {
+    _setExportChapterBar(null);
+    setExportUi('idle');
+    document.getElementById('export-status').textContent = 'Export stopped.';
+    initExportPanelState();
   }
 };
 
