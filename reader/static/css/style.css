@@ -587,7 +587,7 @@ code {
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .toc-item-meta {
-  font-size: 0.68rem; color: var(--text3);
+  font-size: 0.78rem; color: var(--text2);
   font-family: 'Courier New', monospace;
 }
 .toc-item-details {
@@ -599,14 +599,14 @@ code {
 .toc-ready-badge {
   color: var(--success);
   font-family: 'Courier New', monospace;
-  font-size: .64rem;
+  font-size: .74rem;
   font-weight: 600;
   white-space: nowrap;
 }
 .toc-audio-progress {
   color: var(--accent);
   font-family: 'Courier New', monospace;
-  font-size: .64rem;
+  font-size: .74rem;
   font-weight: 600;
   white-space: nowrap;
 }
