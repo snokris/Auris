@@ -65,3 +65,22 @@ def is_explicit_section(line: str, max_len: int = 150) -> bool:
     if not line or len(line) > max_len:
         return False
     return bool(SECTION_RE.match(line))
+
+
+def looks_like_lead_in_prose(content: str) -> bool:
+    """True when pre-first-chapter text is real prose worth keeping.
+
+    Distinguishes an author's note / motto / opening paragraph (flowing
+    sentences) from a title page or byline block (short lines, a name, a
+    translator credit — no sentence flow). Used to decide whether the
+    content before the first chapter heading is read or dropped.
+    """
+    content = (content or '').strip()
+    words = content.split()
+    if len(words) < 15:
+        return False
+    lines = [ln.strip() for ln in content.splitlines() if ln.strip()]
+    longest_line_words = max((len(ln.split()) for ln in lines), default=0)
+    sentence_marks = len(re.findall(r'[.!?…]', content))
+    # Prose either flows on a long line or has several sentence endings.
+    return longest_line_words >= 12 or sentence_marks >= 2

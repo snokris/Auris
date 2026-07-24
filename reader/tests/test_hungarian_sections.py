@@ -67,6 +67,31 @@ class HungarianTxtSplitTest(unittest.TestCase):
         self.assertIn("HARMADIK FEJEZET", titles)
         self.assertGreaterEqual(len(chapters), 3)
 
+    def test_lead_in_prose_before_chapter_one_is_kept(self):
+        text = (
+            "Gyalog-galopp\n\n"
+            "Ez a történet réges-régen kezdődött, egy ködös reggelen, amikor "
+            "Artúr király még csak álmodozott a kerekasztalról és a bátor "
+            "lovagokról, akik majd csatlakoznak hozzá a nagy küldetésben.\n\n"
+            "ELSŐ FEJEZET\n\n"
+            "Artúr király lóháton érkezett a várhoz, szolgája kókuszdióval "
+            "kopogott mögötte, és a francia őr gúnyosan kiáltott le a falról.\n"
+        )
+        with tempfile.NamedTemporaryFile(
+            "w", suffix=".txt", encoding="utf-8", delete=False
+        ) as fh:
+            fh.write(text)
+            path = fh.name
+        try:
+            result = txt_parser.parse(path)
+        finally:
+            os.remove(path)
+        chapters = result["chapters"] if isinstance(result, dict) else result
+        joined = "\n".join(c["content"] for c in chapters)
+        self.assertIn("réges-régen kezdődött", joined)
+        # And the real chapter is still detected separately.
+        self.assertTrue(any(c["title"].strip().upper() == "ELSŐ FEJEZET" for c in chapters))
+
 
 if __name__ == "__main__":
     unittest.main()

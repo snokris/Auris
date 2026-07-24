@@ -6,6 +6,7 @@ from core.parser.sections import (
     HU_ORDINAL as _HU_ORDINAL,
     NUMBER_WORDS as _NUMBER_WORDS,
     is_explicit_section as _is_explicit_section,
+    looks_like_lead_in_prose as _looks_like_lead_in_prose,
 )
 _SKIP_SECTION_RE = re.compile(
     r'^(?:table\s+of\s+contents|contents|copyright\b|other\s+books\s+by\b|'
@@ -85,7 +86,14 @@ def _should_skip_section(title, content, started_story):
         return True
     if 'tartalom' in lowered and len(_TOC_CHAPTER_RE.findall(content)) >= 3:
         return True
-    if not started_story and len(content.split()) < 120 and not _is_explicit_section(title):
+    # Before the first real chapter, keep genuine lead-in prose (an author's
+    # note, motto, opening text) but drop title pages / bylines / short
+    # dedications that are not flowing prose.
+    if (
+        not started_story
+        and not _is_explicit_section(title)
+        and not _looks_like_lead_in_prose(content)
+    ):
         return True
     return False
 

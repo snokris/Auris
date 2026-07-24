@@ -5,6 +5,7 @@ from html.parser import HTMLParser
 from core.parser.sections import (
     HU_NAMED_SECTIONS as _HU_NAMED_SECTIONS,
     HU_ORDINAL as _HU_ORDINAL,
+    looks_like_lead_in_prose as _looks_like_lead_in_prose,
 )
 
 try:
@@ -186,10 +187,12 @@ def _should_skip_document(lines, text, started_story):
         return True
 
     if not started_story:
-        # Skip title pages and promotional lead-in until the first real section.
+        # Skip bare title pages / bylines, but keep real lead-in prose (an
+        # author's note, motto, or opening text the reader expects to hear).
+        has_heading = any(_looks_like_section_heading(line) for line in lines)
         if len(lines) <= 3 and len(text.split()) < 40:
             return True
-        if len(text.split()) < 120 and not any(_looks_like_section_heading(line) for line in lines):
+        if not has_heading and not _looks_like_lead_in_prose(text):
             return True
 
     if started_story and re.search(
