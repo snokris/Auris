@@ -127,6 +127,15 @@ def init_db():
             label         TEXT,
             created_at    TEXT DEFAULT (datetime('now'))
         );
+
+        CREATE TABLE IF NOT EXISTS export_prefs (
+            book_id    INTEGER PRIMARY KEY REFERENCES books(id) ON DELETE CASCADE,
+            mode       TEXT NOT NULL,
+            chapters   TEXT,
+            audio_fmt  TEXT NOT NULL,
+            sub_fmt    TEXT NOT NULL,
+            updated_at TEXT DEFAULT (datetime('now'))
+        );
         """)
 
         cols = {

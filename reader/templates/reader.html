@@ -103,10 +103,24 @@
         <label><input type="radio" name="exp-sub" value="srt"{% if book.single_narrator_mode %} checked{% endif %}> SRT (plain)</label>
       </div>
       <button class="btn btn-primary btn-full" id="do-export-btn">Generate export</button>
-      <div class="export-progress-wrap" id="export-progress-wrap">
-        <div class="export-progress-fill" id="export-progress-fill"></div>
+
+      <div class="export-status-block">
+        <div class="export-bar-label">
+          <span>Book</span>
+          <span id="export-book-count">&#8211;</span>
+        </div>
+        <div class="export-progress-wrap active" id="export-progress-wrap">
+          <div class="export-progress-fill" id="export-progress-fill"></div>
+        </div>
+        <div class="export-bar-label">
+          <span id="export-chapter-name">Current chapter</span>
+          <span id="export-chapter-count">&#8211;</span>
+        </div>
+        <div class="export-progress-wrap active" id="export-chapter-wrap">
+          <div class="export-progress-fill" id="export-chapter-fill"></div>
+        </div>
+        <div id="export-status" class="export-status"></div>
       </div>
-      <div id="export-status" class="export-status"></div>
     </div>
   </aside>
 

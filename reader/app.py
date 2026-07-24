@@ -1472,6 +1472,8 @@ def _bump_export_progress(job: dict | None, n: int = 1, *, synthesized: bool = F
     if not job.get('t0'):
         job['t0'] = now
     job['done'] = int(job.get('done') or 0) + n
+    if 'chapter_total' in job:
+        job['chapter_done'] = int(job.get('chapter_done') or 0) + n
     if synthesized:
         if not job.get('synth_t0'):
             job['synth_t0'] = now
@@ -1954,9 +1956,11 @@ def _get_chapter_segments(chapter_id, book_id):
     return [dict(r) for r in rows]
 
 
-def _make_export_job() -> tuple[str, dict]:
+def _make_export_job(book_id: int | None = None) -> tuple[str, dict]:
     job_id = str(uuid.uuid4())
     job: dict = {
+        'job_id': job_id,
+        'book_id': book_id,
         'state': 'pending',
         'message': 'Starting...',
         'done': 0,
@@ -1971,6 +1975,18 @@ def _make_export_job() -> tuple[str, dict]:
     }
     _export_jobs[job_id] = job
     return job_id, job
+
+
+def _save_export_prefs(book_id: int, mode: str, chapters, audio_fmt: str, sub_fmt: str):
+    with get_conn() as conn:
+        conn.execute(
+            'INSERT INTO export_prefs (book_id, mode, chapters, audio_fmt, sub_fmt, updated_at) '
+            "VALUES (?, ?, ?, ?, ?, datetime('now')) "
+            'ON CONFLICT(book_id) DO UPDATE SET mode=excluded.mode, '
+            'chapters=excluded.chapters, audio_fmt=excluded.audio_fmt, '
+            'sub_fmt=excluded.sub_fmt, updated_at=excluded.updated_at',
+            (book_id, mode, chapters, audio_fmt, sub_fmt),
+        )
 
 
 def _run_chapter_export(job_id: str, book_id: int, chapter_id: int, audio_fmt: str, sub_fmt: str):
@@ -1991,6 +2007,9 @@ def _run_chapter_export(job_id: str, book_id: int, chapter_id: int, audio_fmt: s
         segs = _get_chapter_segments(chapter_id, book_id)
         job['total'] = len(segs)
         job['done'] = 0
+        job['chapter_title'] = ch['title']
+        job['chapter_total'] = len(segs)
+        job['chapter_done'] = 0
         job['message'] = f'Generating audio (0/{len(segs)})'
         export_pool = _start_export_pool(job)
         chapter_failure = _ensure_audio_for_chapter(
@@ -2068,6 +2087,9 @@ def _run_chapterwise_export(
         output_dir = exporter.book_export_dir(book['title'], book['author'])
         written = 0
         for ch_data in chapters_data:
+            job['chapter_title'] = ch_data['chapter_title']
+            job['chapter_total'] = len(ch_data['segments'])
+            job['chapter_done'] = 0
             chapter_failure = _ensure_audio_for_chapter(
                 book_id,
                 ch_data['ch_id'],
@@ -2139,7 +2161,8 @@ def export_chapter(book_id, chapter_id):
         active = _chapter_generation_jobs.get(active_id) if active_id else None
         if active and active.get('state') in ('pending', 'running'):
             return jsonify({'error': 'Chapter audio generation is already running.'}), 409
-        job_id, _ = _make_export_job()
+        job_id, _ = _make_export_job(book_id)
+    _save_export_prefs(book_id, 'chapter', None, audio_fmt, sub_fmt)
     threading.Thread(
         target=_run_chapter_export,
         args=(job_id, book_id, chapter_id, audio_fmt, sub_fmt),
@@ -2203,13 +2226,70 @@ def export_chapterwise(book_id):
         active = _chapter_generation_jobs.get(active_id) if active_id else None
         if active and active.get('state') in ('pending', 'running'):
             return jsonify({'error': 'Chapter audio generation is already running.'}), 409
-        job_id, _ = _make_export_job()
+        job_id, _ = _make_export_job(book_id)
+    _save_export_prefs(
+        book_id, 'chapterwise', body.get('chapters'), audio_fmt, sub_fmt
+    )
     threading.Thread(
         target=_run_chapterwise_export,
         args=(job_id, book_id, audio_fmt, sub_fmt, chapter_numbers),
         daemon=True,
     ).start()
     return jsonify({'job_id': job_id})
+
+
+@app.route('/api/books/<int:book_id>/export/state')
+def export_state(book_id):
+    """Persistent export panel state: saved prefs, live job, resumable counts.
+
+    Survives an app restart — the audio cache holds every generated segment,
+    so ready/total computed from the DB tells the panel how much of the last
+    export selection is already done.
+    """
+    with get_conn() as conn:
+        prefs_row = conn.execute(
+            'SELECT mode, chapters, audio_fmt, sub_fmt, updated_at '
+            'FROM export_prefs WHERE book_id=?', (book_id,)
+        ).fetchone()
+        counts = conn.execute(
+            'SELECT c.order_num, '
+            'COUNT(s.id) AS total, '
+            'COALESCE(SUM(CASE WHEN s.audio_path IS NOT NULL THEN 1 ELSE 0 END), 0) AS ready '
+            'FROM chapters c '
+            'LEFT JOIN tts_segments s ON s.chapter_id=c.id AND s.book_id=c.book_id '
+            'WHERE c.book_id=? GROUP BY c.id ORDER BY c.order_num',
+            (book_id,)
+        ).fetchall()
+    prefs = dict(prefs_row) if prefs_row else None
+
+    # ready/total over the saved selection (whole book when none saved).
+    selected = None
+    if prefs and prefs['mode'] == 'chapterwise':
+        try:
+            selected = set(
+                exporter.parse_chapter_selection(prefs['chapters'], len(counts))
+            )
+        except ValueError:
+            selected = None
+    ready = total = 0
+    for number, row in enumerate(counts, 1):
+        if selected is not None and number not in selected:
+            continue
+        ready += row['ready']
+        total += row['total']
+
+    active = None
+    for job in _export_jobs.values():
+        if job.get('book_id') == book_id and job.get('state') in ('pending', 'running'):
+            _refresh_export_job_fields(job)
+            active = job
+            break
+    return jsonify({
+        'prefs': prefs,
+        'active_job': active,
+        'ready': ready,
+        'total': total,
+    })
 
 
 @app.route('/api/export/status/<job_id>')

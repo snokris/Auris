@@ -1097,15 +1097,147 @@ function toggleExportPanel() {
   panel.classList.toggle('collapsed');
   if (opening) {
     document.getElementById('bookmarks-panel').classList.add('collapsed');
-    // Drop any stale status text (e.g. an old "TTS model not ready" error)
-    // when the panel is (re)opened outside of a running export.
-    if (!_exportBusy) {
-      const status = document.getElementById('export-status');
-      if (status) status.textContent = '';
-    }
+    // Refresh the persistent status block with live counts on every open.
+    if (!_exportBusy) initExportPanelState();
   }
 }
 document.getElementById('export-btn').onclick = toggleExportPanel;
+
+// ── Persistent export status (survives app/browser restarts) ────────────────
+
+function _setExportBookBar(done, total) {
+  const fill = document.getElementById('export-progress-fill');
+  const count = document.getElementById('export-book-count');
+  const pct = total > 0 ? Math.min(100, Math.round((done / total) * 100)) : 0;
+  fill.style.width = pct + '%';
+  count.textContent = total > 0 ? `${done}/${total}` : '–';
+}
+
+function _setExportChapterBar(sr) {
+  const fill = document.getElementById('export-chapter-fill');
+  const count = document.getElementById('export-chapter-count');
+  const name = document.getElementById('export-chapter-name');
+  const total = Number(sr && sr.chapter_total) || 0;
+  if (total > 0) {
+    const done = Math.min(Number(sr.chapter_done) || 0, total);
+    name.textContent = sr.chapter_title || 'Current chapter';
+    name.title = sr.chapter_title || '';
+    count.textContent = `${done}/${total}`;
+    fill.style.width = Math.min(100, Math.round((done / total) * 100)) + '%';
+  } else {
+    name.textContent = 'Current chapter';
+    name.title = '';
+    count.textContent = '–';
+    fill.style.width = '0%';
+  }
+}
+
+async function monitorExportJob(jobId) {
+  const status = document.getElementById('export-status');
+  const doBtn = document.getElementById('do-export-btn');
+  _exportBusy = true;
+  _bufferGenId++;
+  doBtn.disabled = true;
+  doBtn.textContent = 'Generate export';
+
+  const finish = (msg) => {
+    _exportBusy = false;
+    status.textContent = msg;
+    doBtn.disabled = false;
+    _refreshTocStatuses();
+  };
+
+  // Client-side ETA fallback if server has not reported one yet.
+  let clientT0 = Date.now();
+  let clientDone0 = null;
+
+  while (true) {
+    await new Promise(res => setTimeout(res, 500));
+    let sr;
+    try { sr = await fetch(`/api/export/status/${jobId}`).then(r => r.json()); }
+    catch (_) { continue; }
+    if (sr.error && !sr.state) {
+      finish('Export job not found (app restarted?) — use Continue to resume.');
+      return;
+    }
+
+    if (sr.total > 0) _setExportBookBar(sr.done, sr.total);
+    _setExportChapterBar(sr);
+
+    // Local ETA when server still estimating (e.g. first synth batch in flight).
+    if (
+      sr.state === 'running' &&
+      sr.total > 0 &&
+      typeof sr.done === 'number' &&
+      (sr.eta_sec == null || !Number.isFinite(sr.eta_sec)) &&
+      sr.done < sr.total
+    ) {
+      if (clientDone0 == null && sr.done > 0) {
+        clientDone0 = sr.done;
+        clientT0 = Date.now();
+      } else if (clientDone0 != null && sr.done > clientDone0) {
+        const elapsed = (Date.now() - clientT0) / 1000;
+        const advanced = sr.done - clientDone0;
+        if (elapsed >= 2 && advanced > 0) {
+          sr.eta_sec = (sr.total - sr.done) / (advanced / elapsed);
+        }
+      }
+    }
+
+    status.textContent = formatExportStatus(sr);
+
+    if (sr.state === 'complete') {
+      _setExportBookBar(sr.total || 1, sr.total || 1);
+      _setExportChapterBar(null);
+      const res = sr.result || {};
+      if (res.zip_download) {
+        window.location.href = res.zip_download;
+      } else {
+        if (res.audio_download)    window.open(res.audio_download);
+        if (res.subtitle_download) setTimeout(() => window.open(res.subtitle_download), 500);
+      }
+      finish(res.export_path
+        ? `Done. ${res.chapter_count} chapter(s) saved to ${res.export_path}`
+        : 'Done. Downloading…');
+      return;
+    }
+    if (sr.state === 'failed') {
+      finish('Export failed: ' + (sr.error || 'Unknown error'));
+      return;
+    }
+  }
+}
+
+async function initExportPanelState() {
+  try {
+    const st = await fetch(`/api/books/${BOOK_ID}/export/state`).then(r => r.json());
+    const doBtn = document.getElementById('do-export-btn');
+    const status = document.getElementById('export-status');
+    if (st.prefs) {
+      const m = document.querySelector(`input[name="exp-mode"][value="${st.prefs.mode}"]`);
+      if (m) { m.checked = true; m.dispatchEvent(new Event('change')); }
+      const a = document.querySelector(`input[name="exp-audio"][value="${st.prefs.audio_fmt}"]`);
+      if (a) a.checked = true;
+      const s = document.querySelector(`input[name="exp-sub"][value="${st.prefs.sub_fmt}"]`);
+      if (s) s.checked = true;
+      if (st.prefs.chapters) {
+        document.getElementById('exp-chapters').value = st.prefs.chapters;
+      }
+    }
+    _setExportBookBar(st.ready || 0, st.total || 0);
+    if (st.active_job && st.active_job.job_id) {
+      status.textContent = 'Export in progress — reattaching…';
+      monitorExportJob(st.active_job.job_id);
+    } else if (st.prefs && st.total > 0 && st.ready > 0 && st.ready < st.total) {
+      doBtn.textContent = 'Continue export';
+      status.textContent =
+        `${st.ready}/${st.total} segments already generated — Continue resumes from the cache.`;
+    } else if (st.prefs && st.total > 0 && st.ready >= st.total) {
+      status.textContent = 'All segments generated — exporting again only rewrites the files.';
+    }
+  } catch (_) { /* panel stays in default state */ }
+}
+initExportPanelState();
 
 document.querySelectorAll('input[name="exp-mode"]').forEach(input => {
   input.addEventListener('change', () => {
@@ -1123,14 +1255,10 @@ document.getElementById('do-export-btn').onclick = async () => {
   const subInput  = document.querySelector('input[name="exp-sub"]:checked');
   const subFmt    = subInput ? subInput.value : 'srt';
 
-  const status    = document.getElementById('export-status');
-  const progWrap  = document.getElementById('export-progress-wrap');
-  const progFill  = document.getElementById('export-progress-fill');
-  const doBtn     = document.getElementById('do-export-btn');
+  const status = document.getElementById('export-status');
+  const doBtn  = document.getElementById('do-export-btn');
 
   doBtn.disabled = true;
-  progWrap.classList.add('active');
-  progFill.style.width = '0%';
   status.textContent = 'Starting export…';
   // Stop background single-segment prewarm so export can batch on the GPU.
   _exportBusy = true;
@@ -1143,14 +1271,10 @@ document.getElementById('do-export-btn').onclick = async () => {
   if (mode === 'chapter')          url = `/api/books/${BOOK_ID}/export/chapter/${currentChapterId}`;
   else                             url = `/api/books/${BOOK_ID}/export/chapterwise`;
 
-  const finish = (msg) => {
+  const fail = (msg) => {
     _exportBusy = false;
     status.textContent = msg;
-    setTimeout(() => {
-      progWrap.classList.remove('active');
-      progFill.style.width = '0%';
-      doBtn.disabled = false;
-    }, 2000);
+    doBtn.disabled = false;
   };
 
   const postExport = () => fetch(url, {
@@ -1178,7 +1302,7 @@ document.getElementById('do-export-btn').onclick = async () => {
           const st = await fetch('/api/tts/status').then(x => x.json());
           if (st.state === 'ready') break;
           if (st.state === 'error') {
-            finish('TTS engine error: ' + (st.message || 'see terminal log'));
+            fail('TTS engine error: ' + (st.message || 'see terminal log'));
             return;
           }
         } catch (_) {}
@@ -1186,69 +1310,10 @@ document.getElementById('do-export-btn').onclick = async () => {
       r = await postExport();
       d = await r.json();
     }
-    if (d.error) { finish(d.error); return; }
-
-    const jobId = d.job_id;
-
-    // Client-side ETA fallback if server has not reported one yet.
-    let clientT0 = Date.now();
-    let clientDone0 = null;
-
-    while (true) {
-      await new Promise(res => setTimeout(res, 500));
-      let sr;
-      try { sr = await fetch(`/api/export/status/${jobId}`).then(r => r.json()); }
-      catch(_) { continue; }
-
-      if (sr.total > 0) {
-        const pct = Math.min(Math.round((sr.done / sr.total) * 95), 95);
-        progFill.style.width = pct + '%';
-      }
-
-      // Local ETA when server still estimating (e.g. first synth batch in flight).
-      if (
-        sr.state === 'running' &&
-        sr.total > 0 &&
-        typeof sr.done === 'number' &&
-        (sr.eta_sec == null || !Number.isFinite(sr.eta_sec)) &&
-        sr.done < sr.total
-      ) {
-        if (clientDone0 == null && sr.done > 0) {
-          clientDone0 = sr.done;
-          clientT0 = Date.now();
-        } else if (clientDone0 != null && sr.done > clientDone0) {
-          const elapsed = (Date.now() - clientT0) / 1000;
-          const advanced = sr.done - clientDone0;
-          if (elapsed >= 2 && advanced > 0) {
-            sr.eta_sec = (sr.total - sr.done) / (advanced / elapsed);
-          }
-        }
-      }
-
-      status.textContent = formatExportStatus(sr);
-
-      if (sr.state === 'complete') {
-        progFill.style.width = '100%';
-        const res = sr.result;
-        if (res.zip_download) {
-          window.location.href = res.zip_download;
-        } else {
-          if (res.audio_download)    window.open(res.audio_download);
-          if (res.subtitle_download) setTimeout(() => window.open(res.subtitle_download), 500);
-        }
-        if (res.export_path) {
-          finish(`Done. ${res.chapter_count} chapter(s) saved to ${res.export_path}`);
-        } else {
-          finish('Done. Downloading…');
-        }
-        break;
-      } else if (sr.state === 'failed') {
-        finish('Export failed: ' + (sr.error || 'Unknown error'));
-        break;
-      }
-    }
-  } catch(e) {
-    finish(e.message);
+    if (d.error) { fail(d.error); return; }
+    await monitorExportJob(d.job_id);
+  } catch (e) {
+    fail(e.message);
   }
 };
 
