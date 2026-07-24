@@ -3,6 +3,7 @@ import re
 from core.parser.language import detect_language
 from core.parser.sections import (
     EXPLICIT_MARKER_THRESHOLD as _EXPLICIT_MARKER_THRESHOLD,
+    HU_ORDINAL as _HU_ORDINAL,
     NUMBER_WORDS as _NUMBER_WORDS,
     is_explicit_section as _is_explicit_section,
 )
@@ -24,7 +25,8 @@ _COPYRIGHT_RE = re.compile(
 )
 _TOC_CHAPTER_RE = re.compile(
     rf'\b(?:chapter|fejezet)\s+(?:\d+|[ivxlcdm]+|{_NUMBER_WORDS})\b|'
-    rf'\b(?:\d+|[ivxlcdm]+)\.?\s*fejezet\b',
+    rf'\b(?:\d+|[ivxlcdm]+)\.?\s*fejezet\b|'
+    rf'\b(?:{_HU_ORDINAL})\s+fejezet\b',
     re.IGNORECASE,
 )
 # Pure roman-numeral sub-section markers: I, II, III., XIV

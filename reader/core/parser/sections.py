@@ -10,6 +10,29 @@ NUMBER_WORDS = (
     r'ninety|hundred'
 )
 
+# Spelled-out Hungarian ordinals 1–99 ("ELSŐ", "MÁSODIK", … "HUSZONKETTEDIK").
+# Vowel classes stay lenient (ő/o, á/a, ö/o) so PDF glyph damage still matches.
+HU_ORDINAL = (
+    r'(?:tizen|huszon|harminc|negyven|[öo]tven|hatvan|hetven|nyolcvan|kilencven)'
+    r'(?:egyedik|kettedik|harmadik|negyedik|[öo]t[öo]dik|hatodik|hetedik|nyolcadik|kilencedik)'
+    r'|els[őo]|m[áa]sodik|harmadik|negyedik|[öo]t[öo]dik|hatodik|hetedik|nyolcadik|kilencedik'
+    r'|tizedik|huszadik|harmincadik|negyvenedik|[öo]tvenedik|hatvanadik|hetvenedik'
+    r'|nyolcvanadik|kilencvenedik|sz[áa]zadik'
+)
+
+# Hungarian named front/back matter (lenient vowels for PDF glyph damage).
+# Each maps to an English section type in ``core.structure``.
+HU_NAMED_SECTIONS = (
+    r'el[őo]sz[óo]'                     # Előszó   → foreword
+    r'|ut[óo]sz[óo]'                    # Utószó   → afterword
+    r'|bevezet[ée]s|bevezet[őo]'        # Bevezetés/Bevezető → introduction
+    r'|pr[óo]l[óo]gus'                  # Prológus → prologue
+    r'|epil[óo]gus'                     # Epilógus → epilogue
+    r'|f[üu]ggel[ée]k'                  # Függelék → appendix
+    r'|k[öo]sz[öo]netnyilv[áa]n[íi]t[áa]s'  # Köszönetnyilvánítás → afterword
+    r'|a\s+szerz[őo]r[őo]l'             # A szerzőről → afterword
+)
+
 # Explicit section markers (English + Hungarian). High-confidence chapter boundaries.
 SECTION_RE = re.compile(
     r'^(?:'
@@ -17,14 +40,17 @@ SECTION_RE = re.compile(
     rf'(?:chapter|ch\.?)\s+(?:\d+|[ivxlcdm]+|{NUMBER_WORDS})\b'
     # English: Part 1 / Part II
     rf'|part\s+(?:\d+|[ivxlcdm]+|{NUMBER_WORDS})\b'
-    # Named front/back matter
+    # Named front/back matter (English + Hungarian)
     r'|prologue|epilogue|foreword|preface|introduction|afterword|appendix|interlude'
-    # Hungarian: "1. fejezet", "Fejezet 1", "I. FEJEZET"
+    rf'|(?:{HU_NAMED_SECTIONS})\b'
+    # Hungarian: "1. fejezet", "Fejezet 1", "I. FEJEZET", "ELSŐ FEJEZET"
     r'|(?:\d+|[ivxlcdm]+)\.?\s*fejezet\b'
     r'|fejezet\s+(?:\d+|[ivxlcdm]+)\b'
-    # Hungarian: "1. rész", "II. rész", "Rész 3"
+    rf'|(?:{HU_ORDINAL})\s+fejezet\b'
+    # Hungarian: "1. rész", "II. rész", "Rész 3", "ELSŐ RÉSZ"
     r'|(?:\d+|[ivxlcdm]+)\.?\s*r[eé]sz\b'
     r'|r[eé]sz\s+(?:\d+|[ivxlcdm]+)\b'
+    rf'|(?:{HU_ORDINAL})\s+r[eé]sz\b'
     r').*$',
     re.IGNORECASE,
 )

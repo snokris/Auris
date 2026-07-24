@@ -2,6 +2,11 @@ import base64
 import re
 from html.parser import HTMLParser
 
+from core.parser.sections import (
+    HU_NAMED_SECTIONS as _HU_NAMED_SECTIONS,
+    HU_ORDINAL as _HU_ORDINAL,
+)
+
 try:
     import ebooklib
     from ebooklib import epub
@@ -22,15 +27,25 @@ _SECTION_HEADING_RE = re.compile(
     rf"(?:chapter|ch\.?)\s+(?:\d+|[ivxlcdm]+|{_NUMBER_WORDS})"
     rf"|part\s+(?:\d+|[ivxlcdm]+|{_NUMBER_WORDS})"
     rf"|prologue|epilogue|foreword|preface|introduction|afterword|appendix|interlude"
+    # Hungarian: "1. fejezet", "I. FEJEZET", "ELSŐ FEJEZET", plus "rész"
+    rf"|(?:\d+|[ivxlcdm]+)\.?\s*fejezet"
+    rf"|fejezet\s+(?:\d+|[ivxlcdm]+)"
+    rf"|(?:{_HU_ORDINAL})\s+fejezet"
+    rf"|(?:\d+|[ivxlcdm]+)\.?\s*r[eé]sz"
+    rf"|(?:{_HU_ORDINAL})\s+r[eé]sz"
+    # Hungarian named front/back matter (Előszó, Utószó, Prológus, Függelék, …)
+    rf"|(?:{_HU_NAMED_SECTIONS})"
     rf")\b.*$",
     re.IGNORECASE,
 )
 _FRONTMATTER_RE = re.compile(
-    r"^(?:table\s+of\s+contents|contents|copyright\b|other\s+books\s+by\b)",
+    r"^(?:table\s+of\s+contents|contents|copyright\b|other\s+books\s+by\b|"
+    r"tartalomjegyz[ée]k|tartalom\b|impresszum\b)",
     re.IGNORECASE,
 )
 _BACKMATTER_RE = re.compile(
-    r"^(?:you\s+have\s+just\s+finished\s+reading\b|about\s+the\s+author\b|acknowledgements?\b)",
+    r"^(?:you\s+have\s+just\s+finished\s+reading\b|about\s+the\s+author\b|"
+    r"acknowledgements?\b|a\s+szerz[őo]r[őo]l\b|k[öo]sz[öo]netnyilv[áa]n[íi]t[áa]s\b)",
     re.IGNORECASE,
 )
 _COPYRIGHT_RE = re.compile(
@@ -44,7 +59,8 @@ _TOC_HINT_RE = re.compile(
     re.IGNORECASE,
 )
 _DIVIDER_RE = re.compile(
-    r"^(?:part|prologue|epilogue|foreword|preface|introduction|afterword|appendix|interlude)\b",
+    r"^(?:part|prologue|epilogue|foreword|preface|introduction|afterword|appendix|interlude"
+    rf"|r[eé]sz|{_HU_NAMED_SECTIONS})\b",
     re.IGNORECASE,
 )
 
