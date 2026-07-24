@@ -394,10 +394,10 @@ def import_book():
 
         for ch in chapters:
             conn.execute(
-                'INSERT INTO chapters (book_id, title, order_num, section_type, content, word_count) '
-                'VALUES (?,?,?,?,?,?)',
-                (book_id, ch['title'], ch['order_num'], ch.get('section_type', 'chapter'),
-                 ch['content'], ch['word_count'])
+                'INSERT INTO chapters (book_id, title, order_num, section_type, content, word_count, excluded) '
+                'VALUES (?,?,?,?,?,?,?)',
+                (book_id, ch['title'], ch['order_num'], ch.get('section_type') or 'chapter',
+                 ch['content'], ch['word_count'], int(bool(ch.get('excluded'))))
             )
 
     if single_narrator_default:
@@ -654,17 +654,123 @@ def list_chapters(book_id):
     with get_conn() as conn:
         rows = conn.execute(
             'SELECT c.id, c.title, c.order_num, c.section_type, c.word_count, '
+            'c.excluded, '
             'COUNT(s.id) AS audio_total, '
             'COALESCE(SUM(CASE WHEN s.audio_path IS NOT NULL THEN 1 ELSE 0 END), 0) '
             'AS audio_ready '
             'FROM chapters c '
             'LEFT JOIN tts_segments s ON s.chapter_id=c.id AND s.book_id=c.book_id '
             'WHERE c.book_id=? '
-            'GROUP BY c.id, c.title, c.order_num, c.section_type, c.word_count '
+            'GROUP BY c.id, c.title, c.order_num, c.section_type, c.word_count, c.excluded '
             'ORDER BY c.order_num',
             (book_id,)
         ).fetchall()
     return jsonify([dict(r) for r in rows])
+
+
+def _renumber_chapters(conn, book_id):
+    rows = conn.execute(
+        'SELECT id FROM chapters WHERE book_id=? ORDER BY order_num', (book_id,)
+    ).fetchall()
+    for new_order, row in enumerate(rows):
+        conn.execute(
+            'UPDATE chapters SET order_num=? WHERE id=?', (new_order, row['id'])
+        )
+
+
+@app.route('/api/books/<int:book_id>/chapters/<int:chapter_id>', methods=['PATCH'])
+def edit_chapter(book_id, chapter_id):
+    """Rename a chapter or toggle its excluded (hidden-from-reading) flag."""
+    body = request.get_json(force=True) or {}
+    if _export_exclusive_active():
+        return jsonify({'error': 'An export is running — edit chapters after it finishes.'}), 409
+    sets, params = [], []
+    if 'title' in body:
+        title = str(body['title'] or '').strip()
+        if not title:
+            return jsonify({'error': 'Title cannot be empty.'}), 400
+        sets.append('title=?')
+        params.append(title)
+    if 'excluded' in body:
+        sets.append('excluded=?')
+        params.append(int(bool(body['excluded'])))
+    if not sets:
+        return jsonify({'error': 'Nothing to update.'}), 400
+    params.extend([chapter_id, book_id])
+    with get_conn() as conn:
+        cur = conn.execute(
+            f'UPDATE chapters SET {", ".join(sets)} WHERE id=? AND book_id=?', params
+        )
+        if cur.rowcount == 0:
+            return jsonify({'error': 'Chapter not found'}), 404
+        row = conn.execute(
+            'SELECT id, title, order_num, section_type, word_count, excluded '
+            'FROM chapters WHERE id=?', (chapter_id,)
+        ).fetchone()
+    return jsonify(dict(row))
+
+
+@app.route('/api/books/<int:book_id>/chapters/<int:chapter_id>', methods=['DELETE'])
+def delete_chapter(book_id, chapter_id):
+    """Delete a chapter and its generated audio segments; renumber the rest."""
+    if _export_exclusive_active():
+        return jsonify({'error': 'An export is running — edit chapters after it finishes.'}), 409
+    with get_conn() as conn:
+        exists = conn.execute(
+            'SELECT 1 FROM chapters WHERE id=? AND book_id=?', (chapter_id, book_id)
+        ).fetchone()
+        if not exists:
+            return jsonify({'error': 'Chapter not found'}), 404
+        remaining = conn.execute(
+            'SELECT COUNT(*) FROM chapters WHERE book_id=?', (book_id,)
+        ).fetchone()[0]
+        if remaining <= 1:
+            return jsonify({'error': 'A book must keep at least one chapter.'}), 400
+        conn.execute('DELETE FROM chapters WHERE id=? AND book_id=?', (chapter_id, book_id))
+        _renumber_chapters(conn, book_id)
+        conn.execute(
+            'UPDATE books SET total_chapters=(SELECT COUNT(*) FROM chapters WHERE book_id=?) '
+            'WHERE id=?', (book_id, book_id)
+        )
+    return jsonify({'ok': True})
+
+
+@app.route('/api/books/<int:book_id>/chapters/<int:chapter_id>/merge-up', methods=['POST'])
+def merge_chapter_up(book_id, chapter_id):
+    """Merge a chapter's text into the chapter above it (by order)."""
+    if _export_exclusive_active():
+        return jsonify({'error': 'An export is running — edit chapters after it finishes.'}), 409
+    with get_conn() as conn:
+        cur_ch = conn.execute(
+            'SELECT id, order_num, content FROM chapters WHERE id=? AND book_id=?',
+            (chapter_id, book_id)
+        ).fetchone()
+        if not cur_ch:
+            return jsonify({'error': 'Chapter not found'}), 404
+        prev = conn.execute(
+            'SELECT id, content FROM chapters WHERE book_id=? AND order_num<? '
+            'ORDER BY order_num DESC LIMIT 1',
+            (book_id, cur_ch['order_num'])
+        ).fetchone()
+        if not prev:
+            return jsonify({'error': 'This is the first chapter — nothing to merge into.'}), 400
+        merged = (prev['content'].rstrip() + '\n\n' + cur_ch['content'].strip()).strip()
+        conn.execute(
+            'UPDATE chapters SET content=?, word_count=? WHERE id=?',
+            (merged, len(merged.split()), prev['id'])
+        )
+        # Both chapters' cached audio is now stale — clear their segments.
+        conn.execute(
+            'DELETE FROM tts_segments WHERE book_id=? AND chapter_id IN (?,?)',
+            (book_id, prev['id'], cur_ch['id'])
+        )
+        conn.execute('DELETE FROM chapters WHERE id=?', (cur_ch['id'],))
+        _renumber_chapters(conn, book_id)
+        conn.execute(
+            'UPDATE books SET total_chapters=(SELECT COUNT(*) FROM chapters WHERE book_id=?) '
+            'WHERE id=?', (book_id, book_id)
+        )
+    return jsonify({'ok': True, 'merged_into': prev['id']})
 
 
 @app.route('/api/books/<int:book_id>/chapters/<int:chapter_id>')
@@ -2136,7 +2242,8 @@ def _run_chapterwise_export(
         with get_conn() as conn:
             book = conn.execute('SELECT * FROM books WHERE id=?', (book_id,)).fetchone()
             chapters = conn.execute(
-                'SELECT id, title FROM chapters WHERE book_id=? ORDER BY order_num', (book_id,)
+                'SELECT id, title FROM chapters WHERE book_id=? AND excluded=0 ORDER BY order_num',
+                (book_id,)
             ).fetchall()
         chapters_data: list[dict] = []
         selected = set(chapter_numbers)
@@ -2281,7 +2388,7 @@ def export_full(book_id):
 
     with get_conn() as conn:
         chapter_count = conn.execute(
-            'SELECT COUNT(*) FROM chapters WHERE book_id=?', (book_id,)
+            'SELECT COUNT(*) FROM chapters WHERE book_id=? AND excluded=0', (book_id,)
         ).fetchone()[0]
     chapter_numbers = exporter.parse_chapter_selection('all', chapter_count)
     with _chapter_generation_lock:
@@ -2318,7 +2425,7 @@ def export_chapterwise(book_id):
 
     with get_conn() as conn:
         chapter_count = conn.execute(
-            'SELECT COUNT(*) FROM chapters WHERE book_id=?', (book_id,)
+            'SELECT COUNT(*) FROM chapters WHERE book_id=? AND excluded=0', (book_id,)
         ).fetchone()[0]
     try:
         chapter_numbers = exporter.parse_chapter_selection(
@@ -2385,7 +2492,7 @@ def export_state(book_id):
             'COALESCE(SUM(CASE WHEN s.audio_path IS NOT NULL THEN 1 ELSE 0 END), 0) AS ready '
             'FROM chapters c '
             'LEFT JOIN tts_segments s ON s.chapter_id=c.id AND s.book_id=c.book_id '
-            'WHERE c.book_id=? GROUP BY c.id ORDER BY c.order_num',
+            'WHERE c.book_id=? AND c.excluded=0 GROUP BY c.id ORDER BY c.order_num',
             (book_id,)
         ).fetchall()
     prefs = dict(prefs_row) if prefs_row else None

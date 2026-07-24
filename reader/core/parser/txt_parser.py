@@ -69,33 +69,34 @@ def _looks_like_heading(line: str, allow_all_caps: bool = True) -> bool:
     return False
 
 
-def _should_skip_section(title, content, started_story):
+def _section_disposition(title, content, started_story):
+    """'drop' (junk), 'exclude' (keep hidden), or 'keep' (normal chapter).
+
+    Front matter before the first chapter that is not flowing prose is
+    preserved as an excluded section instead of being discarded, so nothing
+    is lost — the reader's chapter editor can reveal, rename, or delete it.
+    """
     title = (title or '').strip()
     content = (content or '').strip()
     lowered = content.lower()
 
     if not content:
-        return True
-    if _SKIP_SECTION_RE.match(title):
-        return True
-    if _BACKMATTER_RE.match(title):
-        return True
+        return 'drop'
+    if _SKIP_SECTION_RE.match(title) or _BACKMATTER_RE.match(title):
+        return 'drop'
     if _COPYRIGHT_RE.search(content):
-        return True
+        return 'drop'
     if 'table of contents' in lowered and len(_TOC_CHAPTER_RE.findall(content)) >= 3:
-        return True
+        return 'drop'
     if 'tartalom' in lowered and len(_TOC_CHAPTER_RE.findall(content)) >= 3:
-        return True
-    # Before the first real chapter, keep genuine lead-in prose (an author's
-    # note, motto, opening text) but drop title pages / bylines / short
-    # dedications that are not flowing prose.
+        return 'drop'
     if (
         not started_story
         and not _is_explicit_section(title)
         and not _looks_like_lead_in_prose(content)
     ):
-        return True
-    return False
+        return 'exclude'
+    return 'keep'
 
 
 def parse(file_path):
@@ -131,35 +132,42 @@ def parse(file_path):
     order = 0
     started_story = False
 
+    def _emit(ch_title, content):
+        nonlocal order, started_story
+        disp = _section_disposition(ch_title, content, started_story)
+        if disp == 'drop':
+            return
+        excluded = disp == 'exclude'
+        # Excluded front matter is preserved even when short; real chapters
+        # keep the small-fragment floor.
+        floor = 40 if excluded else 100
+        if len(content) <= floor:
+            return
+        chapters.append({
+            'title': ch_title,
+            'order_num': order,
+            'content': content,
+            'word_count': len(content.split()),
+            'excluded': excluded,
+            'section_type': 'frontmatter' if excluded else None,
+        })
+        order += 1
+        if not excluded:
+            started_story = True
+
     for line in lines:
         stripped = line.strip()
         if _BACKMATTER_RE.match(stripped):
             break
         if _looks_like_heading(stripped, allow_all_caps=allow_all_caps):
-            content = '\n'.join(current_lines).strip()
-            if len(content) > 100 and not _should_skip_section(current_title, content, started_story):
-                chapters.append({
-                    'title': current_title,
-                    'order_num': order,
-                    'content': content,
-                    'word_count': len(content.split()),
-                })
-                order += 1
-                started_story = True
+            _emit(current_title, '\n'.join(current_lines).strip())
             current_title = stripped
             current_lines = []
         else:
             current_lines.append(line)
 
     if current_lines:
-        content = '\n'.join(current_lines).strip()
-        if len(content) > 50 and not _should_skip_section(current_title, content, started_story):
-            chapters.append({
-                'title': current_title,
-                'order_num': order,
-                'content': content,
-                'word_count': len(content.split()),
-            })
+        _emit(current_title, '\n'.join(current_lines).strip())
 
     if not chapters:
         chapters = [{

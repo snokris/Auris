@@ -625,6 +625,25 @@ code {
   font-weight: 600;
   white-space: nowrap;
 }
+/* Chapter editor */
+.toc-item.excluded { opacity: .55; }
+.toc-excluded-tag {
+  font-size: .6rem; color: var(--accent);
+  border: 1px solid var(--accent); border-radius: 3px;
+  padding: 0 4px; margin-left: 6px; vertical-align: middle;
+  font-family: 'Courier New', monospace; text-transform: uppercase;
+}
+.toc-edit-controls { display: none; gap: 4px; margin-top: 6px; }
+.toc-editing .toc-edit-controls { display: flex; }
+.toc-edit-btn {
+  background: var(--bg3); border: 1px solid var(--border);
+  border-radius: 5px; padding: 3px 7px; cursor: pointer;
+  font-size: .8rem; color: var(--text2); line-height: 1;
+}
+.toc-edit-btn:hover { background: var(--card); color: var(--text); }
+.toc-edit-btn.danger:hover { color: #c0392b; border-color: #c0392b; }
+#toc-edit-toggle.active { background: var(--accent); color: #fff; }
+.toc-editing .toc-item { cursor: default; }
 .toc-section-badge {
   display: inline-block; margin-bottom: 3px;
   font-size: 0.6rem; padding: 1px 5px; border-radius: 2px;

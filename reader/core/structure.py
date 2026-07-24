@@ -48,7 +48,14 @@ def classify_section(title: str) -> str:
 
 def enrich_chapters(chapters: list) -> list:
     for ch in chapters:
-        ch['section_type'] = classify_section(ch['title'])
+        # Preserve an explicit front-matter marker from the parser (excluded
+        # lead-in that is kept but hidden); classify everything else by title.
+        if ch.get('section_type') == 'frontmatter' or ch.get('excluded'):
+            ch['section_type'] = 'frontmatter'
+            ch['excluded'] = True
+        else:
+            ch['section_type'] = classify_section(ch['title'])
+            ch.setdefault('excluded', False)
     return chapters
 
 

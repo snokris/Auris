@@ -170,30 +170,32 @@ def _is_toc_document(lines, text):
     return "table of contents" in text.lower() and chapter_mentions >= 3
 
 
-def _should_skip_document(lines, text, started_story):
+def _document_disposition(lines, text, started_story):
+    """'drop' (junk), 'exclude' (keep hidden), or 'keep' (normal).
+
+    Pre-first-chapter front matter that is not flowing prose is preserved as
+    an excluded section rather than discarded, so nothing is lost — the
+    reader's chapter editor can reveal, rename, or delete it.
+    """
     if not lines or not text:
-        return True
+        return 'drop'
 
     first = lines[0]
     lowered = text.lower()
 
     if _is_toc_document(lines, text):
-        return True
+        return 'drop'
     if _COPYRIGHT_RE.search(text):
-        return True
-    if _FRONTMATTER_RE.match(first):
-        return True
-    if _BACKMATTER_RE.match(first):
-        return True
+        return 'drop'
+    if _FRONTMATTER_RE.match(first) or _BACKMATTER_RE.match(first):
+        return 'drop'
 
     if not started_story:
-        # Skip bare title pages / bylines, but keep real lead-in prose (an
-        # author's note, motto, or opening text the reader expects to hear).
         has_heading = any(_looks_like_section_heading(line) for line in lines)
         if len(lines) <= 3 and len(text.split()) < 40:
-            return True
+            return 'exclude'
         if not has_heading and not _looks_like_lead_in_prose(text):
-            return True
+            return 'exclude'
 
     if started_story and re.search(
         r"\bfeel free to tweet\b|"
@@ -201,9 +203,9 @@ def _should_skip_document(lines, text, started_story):
         r"\bother books by\b",
         lowered,
     ):
-        return True
+        return 'drop'
 
-    return False
+    return 'keep'
 
 
 def _split_document(lines):
@@ -246,7 +248,7 @@ def _append_to_previous(chapters, extra_lines):
     previous["word_count"] = len(previous["content"].split())
 
 
-def _add_section(chapters, title, content, order_num, min_words=None):
+def _add_section(chapters, title, content, order_num, min_words=None, excluded=False):
     title = (title or "").strip()
     content = content.strip()
     if not content:
@@ -261,6 +263,8 @@ def _add_section(chapters, title, content, order_num, min_words=None):
             "order_num": order_num,
             "content": content,
             "word_count": len(content.split()),
+            "excluded": excluded,
+            "section_type": "frontmatter" if excluded else None,
         }
     )
     return order_num + 1
@@ -367,8 +371,17 @@ def parse(file_path):
         # always real content.  We still skip genuine TOC HTML pages regardless.
         if _is_toc_document(lines, text):
             continue
-        if not toc_title and _should_skip_document(lines, text, started_story):
-            continue
+        if not toc_title:
+            disp = _document_disposition(lines, text, started_story)
+            if disp == 'drop':
+                continue
+            if disp == 'exclude':
+                # Preserve as a hidden front-matter section (editor can reveal).
+                order = _add_section(
+                    chapters, _fallback_title(lines, order), text, order,
+                    min_words=1, excluded=True,
+                )
+                continue
 
         prefix_lines, sections = _split_document(lines)
         if sections:

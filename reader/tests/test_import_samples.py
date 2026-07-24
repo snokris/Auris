@@ -33,9 +33,12 @@ class ImportSampleTest(unittest.TestCase):
         """14Carat uses 'Chapter One'..'Chapter Twenty-one' plus all-caps scene
         titles and roman sub-sections. Only the Chapter markers should split."""
         book = txt_parser.parse(SAMPLES / '14Carat.txt')
-        titles = [ch['title'] for ch in book['chapters']]
+        # The title page before "Chapter One" is preserved as an excluded
+        # front-matter section (kept but hidden), not read/exported by default.
+        real = [ch for ch in book['chapters'] if not ch.get('excluded')]
+        titles = [ch['title'] for ch in real]
 
-        self.assertEqual(len(book['chapters']), 21)
+        self.assertEqual(len(real), 21)
         self.assertEqual(titles[0], 'Chapter One')
         self.assertEqual(titles[-1], 'Chapter Twenty-one')
         self.assertTrue(all(t.startswith('Chapter ') for t in titles))
@@ -43,7 +46,11 @@ class ImportSampleTest(unittest.TestCase):
         for bad in ('III', 'TEXAS RESTAURANT', 'VERDIER:', 'CHARACTERS:'):
             self.assertNotIn(bad, titles)
         # Each real chapter should carry substantial body text
-        self.assertTrue(all(ch['word_count'] > 100 for ch in book['chapters']))
+        self.assertTrue(all(ch['word_count'] > 100 for ch in real))
+        # The dropped title page is now retained but flagged excluded.
+        excluded = [ch for ch in book['chapters'] if ch.get('excluded')]
+        self.assertEqual(len(excluded), 1)
+        self.assertIn('14-Carat', excluded[0]['content'])
 
     def test_hungarian_pdf_splits_on_fejezet_markers(self):
         """Hungarian PDF uses 'I. FEJEZET' at near-body font size — must not

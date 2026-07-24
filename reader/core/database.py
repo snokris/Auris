@@ -58,7 +58,8 @@ def init_db():
             order_num    INTEGER NOT NULL,
             section_type TEXT DEFAULT 'chapter',
             content      TEXT NOT NULL,
-            word_count   INTEGER DEFAULT 0
+            word_count   INTEGER DEFAULT 0,
+            excluded     INTEGER DEFAULT 0
         );
 
         CREATE TABLE IF NOT EXISTS characters (
@@ -181,6 +182,13 @@ def init_db():
             conn.execute("ALTER TABLE books ADD COLUMN character_analysis_model TEXT")
         if "character_analysis_updated_at" not in cols:
             conn.execute("ALTER TABLE books ADD COLUMN character_analysis_updated_at TEXT")
+
+        chapter_cols = {
+            row["name"]
+            for row in conn.execute("PRAGMA table_info(chapters)").fetchall()
+        }
+        if "excluded" not in chapter_cols:
+            conn.execute("ALTER TABLE chapters ADD COLUMN excluded INTEGER DEFAULT 0")
 
         char_cols = {
             row["name"]

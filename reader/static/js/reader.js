@@ -204,15 +204,24 @@ async function loadTOC() {
     const ready = Number(ch.audio_total) > 0 &&
       Number(ch.audio_ready) >= Number(ch.audio_total);
     const partial = !ready && Number(ch.audio_ready) > 0;
+    const excluded = !!ch.excluded;
+    const editControls = `
+      <span class="toc-edit-controls">
+        <button class="toc-edit-btn" title="Rename" onclick="renameChapter(event, ${ch.id})">&#9998;</button>
+        <button class="toc-edit-btn" title="${excluded ? 'Include in audiobook' : 'Exclude from audiobook'}" onclick="toggleChapterExcluded(event, ${ch.id}, ${excluded ? 0 : 1})">${excluded ? '&#128065;' : '&#128584;'}</button>
+        <button class="toc-edit-btn" title="Merge into previous" onclick="mergeChapterUp(event, ${ch.id})">&#8593;&#8681;</button>
+        <button class="toc-edit-btn danger" title="Delete" onclick="deleteChapter(event, ${ch.id})">&#128465;</button>
+      </span>`;
     return `
-      <div class="toc-item" data-id="${ch.id}" onclick="openChapter(${ch.id})">
+      <div class="toc-item${excluded ? ' excluded' : ''}" data-id="${ch.id}" onclick="openChapter(${ch.id})">
         ${badge}
-        <span class="toc-item-title">${esc(ch.title)}</span>
+        <span class="toc-item-title">${esc(ch.title)}${excluded ? ' <span class="toc-excluded-tag">kihagyva</span>' : ''}</span>
         <span class="toc-item-details">
           <span class="toc-item-meta">${wc}</span>
           <span class="toc-audio-progress${partial ? '' : ' hidden'}">${partial ? `${ch.audio_ready}/${ch.audio_total}` : ''}</span>
           <span class="toc-ready-badge${ready ? '' : ' hidden'}">&#10003; Ready</span>
         </span>
+        ${editControls}
       </div>`;
   }).join('');
 
@@ -235,6 +244,66 @@ async function loadTOC() {
   }
 
   loadBookmarks();
+}
+
+// ── Chapter editor ────────────────────────────────────────────────────────────
+
+let _tocEditMode = false;
+
+function toggleTocEdit() {
+  _tocEditMode = !_tocEditMode;
+  document.getElementById('toc-sidebar').classList.toggle('toc-editing', _tocEditMode);
+  const btn = document.getElementById('toc-edit-toggle');
+  if (btn) btn.classList.toggle('active', _tocEditMode);
+}
+
+async function _chapterApi(url, opts) {
+  try {
+    const r = await fetch(url, opts);
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok || d.error) { showToast(d.error || 'Chapter edit failed.'); return null; }
+    return d;
+  } catch (e) { showToast('Chapter edit failed: ' + e.message); return null; }
+}
+
+async function renameChapter(e, id) {
+  e.stopPropagation();
+  const item = e.target.closest('.toc-item');
+  const titleEl = item && item.querySelector('.toc-item-title');
+  // First text node = title without the "kihagyva" tag.
+  const currentTitle = titleEl ? (titleEl.childNodes[0]?.textContent || titleEl.textContent).trim() : '';
+  const title = prompt('Fejezet neve:', currentTitle);
+  if (title == null) return;
+  const trimmed = title.trim();
+  if (!trimmed) { showToast('A cím nem lehet üres.'); return; }
+  const ok = await _chapterApi(`/api/books/${BOOK_ID}/chapters/${id}`, {
+    method: 'PATCH', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ title: trimmed }),
+  });
+  if (ok) await loadTOC();
+}
+
+async function toggleChapterExcluded(e, id, excluded) {
+  e.stopPropagation();
+  const ok = await _chapterApi(`/api/books/${BOOK_ID}/chapters/${id}`, {
+    method: 'PATCH', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ excluded }),
+  });
+  if (ok) await loadTOC();
+}
+
+async function deleteChapter(e, id) {
+  e.stopPropagation();
+  if (!confirm('Törlöd ezt a fejezetet? A hozzá generált hang is törlődik.')) return;
+  const ok = await _chapterApi(`/api/books/${BOOK_ID}/chapters/${id}`, { method: 'DELETE' });
+  if (ok) await loadTOC();
+}
+
+async function mergeChapterUp(e, id) {
+  e.stopPropagation();
+  if (!confirm('Beolvasztod ezt a fejezetet az előzőbe? A két fejezet hangja újragenerálódik.')) return;
+  const ok = await _chapterApi(`/api/books/${BOOK_ID}/chapters/${id}/merge-up`, { method: 'POST' });
+  if (ok) await loadTOC();
 }
 
 // ── TOC status auto-refresh ───────────────────────────────────────────────────
