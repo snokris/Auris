@@ -34,7 +34,7 @@ OFFICIAL_MODEL_REPO = "bosonai/higgs-tts-3-4b"
 DEFAULT_TRANSFORMERS_REPO = "multimodalart/higgs-audio-v3-tts-4b-transformers"
 REFERENCE_EXPAND_IF_SHORTER_SECONDS = 2.0
 REFERENCE_EXPAND_TARGET_SECONDS = 4.0
-HIGGS_CACHE_VERSION = 6
+HIGGS_CACHE_VERSION = 7  # v7: raw-mode number/date normalization (Hungarian digits)
 HIGGS_MODEL_INIT_SEED = 123
 
 _OMNIVOICE_TAGS = {
@@ -403,11 +403,16 @@ class HiggsTTSEngine:
         text = _language_cleanup(text, language)
         prompt_mode = str(_setting("higgs_prompt_mode", "raw") or "raw").lower()
         if prompt_mode == "raw":
-            # Match source/higgs-tts-3-4b/app.py's default compose_prompt path:
-            # clean user text, no implicit normalization or delivery prefix.
+            # Clean-text path (no control tokens / delivery prefix), but still
+            # expand numbers and dates: Higgs mis-reads bare digits, e.g. it
+            # says the Hungarian "16000" as "százhatezer" (106000). Number
+            # normalization is orthogonal to the raw/expressive control style
+            # and is essential for Hungarian audiobooks. Respects the
+            # ``normalize_text`` setting (default on).
+            spoken = apply_text_normalization(text, language) if normalize_text else text
             # Auris enrichment tags are implementation details of OmniVoice
             # and must not reach Higgs as literal bracketed words.
-            return _BRACKET_TAG_RE.sub("", text).strip()
+            return _BRACKET_TAG_RE.sub("", spoken).strip()
 
         spoken = apply_text_normalization(text, language) if normalize_text else text
         spoken = _translate_inline_tags(spoken).strip()
