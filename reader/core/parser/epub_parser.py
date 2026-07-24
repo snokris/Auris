@@ -6,6 +6,7 @@ from core.parser.sections import (
     HU_NAMED_SECTIONS as _HU_NAMED_SECTIONS,
     HU_ORDINAL as _HU_ORDINAL,
     looks_like_lead_in_prose as _looks_like_lead_in_prose,
+    split_front_matter as _split_front_matter,
 )
 
 try:
@@ -385,8 +386,24 @@ def parse(file_path):
 
         prefix_lines, sections = _split_document(lines)
         if sections:
+            prefix_text = "\n".join(prefix_lines).strip()
+            if chapters:
+                # Continuation of a previous chapter.
+                _append_to_previous(chapters, prefix_lines)
+            elif prefix_text:
+                # Lead-in text before the very first heading — never drop it.
+                # Split off a leading title-page / credits block as an excluded
+                # (hidden) section; keep the motto and everything after it.
+                for seg_text, seg_excl in _split_front_matter(prefix_text):
+                    seg_title = (
+                        _fallback_title(seg_text.splitlines(), order)
+                        if seg_excl else 'Bevezető'
+                    )
+                    order = _add_section(
+                        chapters, seg_title, seg_text, order,
+                        min_words=1, excluded=seg_excl,
+                    )
             started_story = True
-            _append_to_previous(chapters, prefix_lines)
             for section in sections:
                 order = _add_section(chapters, section["title"], section["content"], order)
             continue

@@ -67,6 +67,63 @@ def is_explicit_section(line: str, max_len: int = 150) -> bool:
     return bool(SECTION_RE.match(line))
 
 
+_OPEN_QUOTE_RE = re.compile(r'^[„"“»‚‛\'`]')
+_CLOSE_QUOTE_RE = re.compile(r'[”"“«]\s*$')
+_CREDIT_LINE_RE = re.compile(
+    r'k[öo]sz[öo]net|ford[íi]t|translated|revised|\b[íi]rta\b|rendezte|'
+    r'szerkeszt|kiad[óo]|copyright|©|isbn|filmreg[ée]ny|\(tartalom\)|'
+    r'a\s+c[íi]met\s+l[áa]sd|korabeli\s+t[öo]rt[ée]n[ée]sz',
+    re.IGNORECASE,
+)
+
+
+def split_front_matter(text: str) -> list[tuple[str, bool]]:
+    """Split lead-in front matter into (segment_text, excluded) parts.
+
+    Isolates only the leading title-page / credits / dedication block (the
+    lines before the first flowing prose or quoted epigraph) as an excluded
+    (hidden) segment; everything from the first real prose line onward stays
+    together as one included segment. A single split — deliberately not a
+    fine-grained one — because content after the opening motto (an author's
+    note, a comedic passage) belongs with the book, not with the boilerplate.
+
+    Returns up to two segments in order. All-boilerplate front matter yields
+    one excluded segment; front matter that starts straight into prose yields
+    one included segment.
+    """
+    lines = text.splitlines()
+    boundary = None
+    in_quote = False  # (kept simple: the first opening quote is the boundary)
+    for i, raw in enumerate(lines):
+        s = raw.strip()
+        if not s:
+            continue
+        if _OPEN_QUOTE_RE.match(s):
+            boundary = i
+            break
+        words = s.split()
+        if (
+            len(words) >= 12
+            and re.search(r'[.!?…]', s)
+            and not _CREDIT_LINE_RE.search(s)
+        ):
+            boundary = i
+            break
+
+    if boundary is None:
+        return [(text.strip(), True)]          # all boilerplate → excluded
+    if boundary == 0:
+        return [(text.strip(), False)]         # straight into prose → included
+    head = '\n'.join(lines[:boundary]).strip()
+    body = '\n'.join(lines[boundary:]).strip()
+    out: list[tuple[str, bool]] = []
+    if head:
+        out.append((head, True))
+    if body:
+        out.append((body, False))
+    return out or [(text.strip(), False)]
+
+
 def looks_like_lead_in_prose(content: str) -> bool:
     """True when pre-first-chapter text is real prose worth keeping.
 

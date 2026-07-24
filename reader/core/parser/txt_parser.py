@@ -7,6 +7,7 @@ from core.parser.sections import (
     NUMBER_WORDS as _NUMBER_WORDS,
     is_explicit_section as _is_explicit_section,
     looks_like_lead_in_prose as _looks_like_lead_in_prose,
+    split_front_matter as _split_front_matter,
 )
 _SKIP_SECTION_RE = re.compile(
     r'^(?:table\s+of\s+contents|contents|copyright\b|other\s+books\s+by\b|'
@@ -132,14 +133,8 @@ def parse(file_path):
     order = 0
     started_story = False
 
-    def _emit(ch_title, content):
+    def _append(ch_title, content, excluded):
         nonlocal order, started_story
-        disp = _section_disposition(ch_title, content, started_story)
-        if disp == 'drop':
-            return
-        excluded = disp == 'exclude'
-        # Excluded front matter is preserved even when short; real chapters
-        # keep the small-fragment floor.
         floor = 40 if excluded else 100
         if len(content) <= floor:
             return
@@ -155,12 +150,27 @@ def parse(file_path):
         if not excluded:
             started_story = True
 
+    def _emit(ch_title, content, is_front_matter=False):
+        disp = _section_disposition(ch_title, content, started_story)
+        if disp == 'drop':
+            return
+        if is_front_matter:
+            # The block before the very first heading: split a leading
+            # title-page/credits block off (excluded) from the motto/intro.
+            for seg_text, seg_excl in _split_front_matter(content):
+                _append('Bevezető' if not seg_excl else ch_title, seg_text, seg_excl)
+            return
+        _append(ch_title, content, disp == 'exclude')
+
+    seen_heading = False
     for line in lines:
         stripped = line.strip()
         if _BACKMATTER_RE.match(stripped):
             break
         if _looks_like_heading(stripped, allow_all_caps=allow_all_caps):
-            _emit(current_title, '\n'.join(current_lines).strip())
+            _emit(current_title, '\n'.join(current_lines).strip(),
+                  is_front_matter=not seen_heading)
+            seen_heading = True
             current_title = stripped
             current_lines = []
         else:

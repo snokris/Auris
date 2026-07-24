@@ -2,7 +2,7 @@ import os
 import tempfile
 import unittest
 
-from core.parser.sections import is_explicit_section
+from core.parser.sections import is_explicit_section, split_front_matter
 from core.parser import txt_parser
 from core.structure import classify_section
 
@@ -36,6 +36,38 @@ class HungarianSectionDetectionTest(unittest.TestCase):
         self.assertEqual(classify_section("A szerzőről"), "afterword")
         self.assertEqual(classify_section("ELSŐ FEJEZET"), "chapter")
         self.assertEqual(classify_section("Első rész"), "part")
+
+
+class FrontMatterSplitTest(unittest.TestCase):
+    def test_title_page_then_epigraph_splits_head_off(self):
+        text = (
+            "Monty Python\nGYALOG-GALOPP\nfilmregény\n"
+            "Köszönet azoknak, akik nélkül ez nem jött volna létre:\n"
+            "Cser Imre\nVágó Szilvia\n"
+            "„Mindezen események közvetlenül azután történtek, hogy Arthur "
+            "megállapodott Cameliard urával a kerekasztal hozományáról, mely a "
+            "torony sarkában porosodott hosszú éveken át.”"
+        )
+        segs = split_front_matter(text)
+        self.assertEqual(len(segs), 2)
+        head, head_excl = segs[0]
+        body, body_excl = segs[1]
+        self.assertTrue(head_excl)
+        self.assertIn("Monty Python", head)
+        self.assertFalse(body_excl)
+        self.assertIn("Mindezen események", body)
+
+    def test_pure_prose_stays_single_included(self):
+        text = ("Ez a történet réges-régen kezdődött egy ködös reggelen, amikor "
+                "a lovagok még bátran vágtattak a mezőn át a vár felé.")
+        segs = split_front_matter(text)
+        self.assertEqual(segs, [(text, False)])
+
+    def test_pure_title_page_stays_single_excluded(self):
+        text = "P. Howard\nThe 14-Carat Roadster\nTranslated by Patricia Bozsó"
+        segs = split_front_matter(text)
+        self.assertEqual(len(segs), 1)
+        self.assertTrue(segs[0][1])
 
 
 class HungarianTxtSplitTest(unittest.TestCase):
