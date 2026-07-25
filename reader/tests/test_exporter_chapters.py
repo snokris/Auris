@@ -59,10 +59,12 @@ class ChapterFolderExportTests(unittest.TestCase):
                     'My Book', chapters, {}, audio_fmt='wav', sub_fmt='srt'
                 )
 
-            self.assertEqual(result['directory_path'], os.path.join(tmp, 'My_Book'))
-            self.assertTrue(os.path.isfile(os.path.join(result['directory_path'], '02_The_Beginning.wav')))
-            self.assertTrue(os.path.isfile(os.path.join(result['directory_path'], '02_The_Beginning.srt')))
-            self.assertTrue(os.path.isfile(os.path.join(result['directory_path'], '11_The_End.wav')))
+            folder = result['directory_path']
+            self.assertEqual(folder, os.path.join(tmp, 'My_Book'))
+            # No author on this book, so the stem is just the title.
+            self.assertTrue(os.path.isfile(os.path.join(folder, 'My_Book_02_The_Beginning.wav')))
+            self.assertTrue(os.path.isfile(os.path.join(folder, 'My_Book_02_The_Beginning.srt')))
+            self.assertTrue(os.path.isfile(os.path.join(folder, 'My_Book_11_The_End.wav')))
 
     def test_successful_mp3_conversion_removes_intermediate_wav(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -79,7 +81,8 @@ class ChapterFolderExportTests(unittest.TestCase):
                 )
 
             self.assertTrue(os.path.isfile(result['audio_path']))
-            self.assertFalse(os.path.exists(os.path.join(tmp, 'Chapter.wav')))
+            self.assertTrue(result['audio_path'].endswith('Book_Chapter.mp3'))
+            self.assertFalse(os.path.exists(os.path.join(tmp, 'Book_Chapter.wav')))
 
 
 if __name__ == '__main__':

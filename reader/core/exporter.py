@@ -33,21 +33,41 @@ SAMPLE_RATE = 24_000
 EXPORTS_DIR = str(Path(__file__).resolve().parent.parent / 'exports')
 os.makedirs(EXPORTS_DIR, exist_ok=True)
 
+# Author + title + chapter title has to stay well inside the 255-byte file name
+# limit, so the book part of a stem is capped here.
+MAX_STEM_LEN = 100
+
+
+def usable_author(author: str | None) -> str:
+    """Filename-safe author, or '' when the book has no usable author."""
+    safe = _safe_name(author) if str(author or '').strip() else ''
+    return '' if safe.lower() in ('', 'unknown', 'export') else safe
+
+
+def book_file_stem(book_title: str, author: str | None = None) -> str:
+    """``Author_-_Title`` for exported files, or just the title without one.
+
+    Files travel out of their folder — onto a phone, into a player's library —
+    so the name has to carry the author even though the folder already does.
+    """
+    title_safe = _safe_name(book_title)
+    author_safe = usable_author(author)
+    if not author_safe:
+        return title_safe
+    return f'{author_safe}_-_{title_safe}'[:MAX_STEM_LEN]
+
 
 def book_export_dir(book_title: str, author: str | None = None) -> str:
-    """Per-book output folder: ``exports/<Author>/<Title>`` (created).
+    """Per-book output folder: ``exports/<Author>_-_<Title>`` (created).
 
+    One flat folder per book, named exactly like the files inside it.
     Unknown/empty authors collapse to ``exports/<Title>`` so the tree stays
     clean for books without metadata.
     """
-    parts = [EXPORTS_DIR]
-    author_safe = _safe_name(author) if str(author or '').strip() else ''
-    if author_safe and author_safe.lower() != 'unknown':
-        parts.append(author_safe)
-    parts.append(_safe_name(book_title))
-    path = os.path.join(*parts)
+    path = os.path.join(EXPORTS_DIR, book_file_stem(book_title, author))
     os.makedirs(path, exist_ok=True)
     return path
+
 
 DEFAULT_SEGMENT_PAUSE_SEC = 0.35
 DIALOGUE_TURN_PAUSE_SEC = 0.55
@@ -456,9 +476,14 @@ def split_chapters_into_parts(
     return [list(range(bounds[j], bounds[j + 1])) for j in range(k)]
 
 
-def part_file_stem(book_title: str, index: int, total: int) -> str:
-    """``Book`` for a single file, ``Book_part1`` … when split."""
-    safe = _safe_name(book_title)
+def part_file_stem(
+    book_title: str,
+    index: int,
+    total: int,
+    author: str | None = None,
+) -> str:
+    """``Author_-_Book`` for a single file, ``…_part1`` … when split."""
+    safe = book_file_stem(book_title, author)
     return safe if total <= 1 else f'{safe}_part{index}'
 
 
@@ -580,7 +605,12 @@ def export_single_chapter(
 ) -> dict:
     """Returns {'audio_path': ..., 'subtitle_path': ..., 'audio_fmt': ..., 'sub_fmt': ...}"""
     output_dir = output_dir or book_export_dir(book_title, author)
-    safe_title = _safe_name(file_stem or chapter_title)
+    if file_stem:
+        safe_title = _safe_name(file_stem)
+    else:
+        # No caller-supplied stem: name the file after the book and the chapter
+        # so it stays identifiable outside its folder.
+        safe_title = f'{book_file_stem(book_title, author)}_{_safe_name(chapter_title)}'
     # Idempotent: an already-resolved dict passed by the caller wins over the
     # saved settings, so a whole book export keeps one consistent set.
     opts = audio_options(opts)
@@ -623,7 +653,7 @@ def export_chapter_zip(
     opts: dict | None = None,
 ) -> str:
     """chapters_data: list of {chapter_title, segments}. Returns zip file path."""
-    safe_book = _safe_name(book_title)
+    safe_book = book_file_stem(book_title, author)
     zip_path = os.path.join(book_export_dir(book_title, author), f'{safe_book}_chapters.zip')
     opts = audio_options(opts)
 
@@ -633,7 +663,9 @@ def export_chapter_zip(
                 ch['chapter_title'], book_title, ch['segments'],
                 character_colors, audio_fmt, sub_fmt, author=author, opts=opts,
             )
-            ch_safe = _safe_name(ch['chapter_title'])
+            # Unzipped files land wherever the listener wants them, so they
+            # carry the book name too.
+            ch_safe = f'{safe_book}_{_safe_name(ch["chapter_title"])}'
             ext = result['audio_fmt']
             zf.write(result['audio_path'], f'{ch_safe}.{ext}')
             zf.write(result['subtitle_path'], f'{ch_safe}.{result["sub_fmt"]}')
@@ -650,8 +682,15 @@ def chapter_number_width(chapters_data: list[dict]) -> int:
     return max(2, len(str(max_number)))
 
 
-def chapter_file_stem(number: int, title: str, number_width: int) -> str:
-    return f'{number:0{number_width}d}_{_safe_name(title)}'
+def chapter_file_stem(
+    number: int,
+    title: str,
+    number_width: int,
+    book_stem: str = '',
+) -> str:
+    """``Author_-_Book_01_Chapter``; the book part is optional."""
+    numbered = f'{number:0{number_width}d}_{_safe_name(title)}'
+    return f'{book_stem}_{numbered}' if book_stem else numbered
 
 
 def export_chapter_folder(
@@ -663,16 +702,17 @@ def export_chapter_folder(
     author: str | None = None,
     opts: dict | None = None,
 ) -> dict:
-    """Write numbered chapter files beneath ``exports/<Author>/<Title>``."""
+    """Write numbered chapter files beneath ``exports/<Author>_-_<Title>``."""
     output_dir = book_export_dir(book_title, author)
     number_width = chapter_number_width(chapters_data)
+    book_stem = book_file_stem(book_title, author)
     opts = audio_options(opts)
     files = []
 
     for fallback_number, chapter in enumerate(chapters_data, 1):
         number = int(chapter.get('chapter_number') or fallback_number)
         title = chapter['chapter_title']
-        stem = chapter_file_stem(number, title, number_width)
+        stem = chapter_file_stem(number, title, number_width, book_stem)
         files.append(export_single_chapter(
             title,
             book_title,

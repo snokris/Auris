@@ -2291,7 +2291,8 @@ def _join_chapters_into_parts(
             f"({len(group)} chapter{'s' if len(group) != 1 else ''})…"
         )
         job['chapter_title'] = ''
-        stem = exporter.part_file_stem(book['title'], index, total)
+        stem = exporter.part_file_stem(
+            book['title'], index, total, book['author'])
         results.append(exporter.export_joined_part(
             book['title'],
             [rendered[i] for i in group],
@@ -2355,6 +2356,7 @@ def _run_chapterwise_export(
         # identically, even if the settings page changes mid-export.
         audio_opts = exporter.audio_options()
         output_dir = exporter.book_export_dir(book['title'], book['author'])
+        book_stem = exporter.book_file_stem(book['title'], book['author'])
         # When joining, chapters are rendered to WAV in a scratch folder and
         # encoded once per part at the end — a joined MP3 is therefore never a
         # re-compressed copy of per-chapter MP3s.
@@ -2391,6 +2393,7 @@ def _run_chapterwise_export(
                 int(ch_data['chapter_number']),
                 ch_data['chapter_title'],
                 number_width,
+                book_stem,
             )
             if join_parts:
                 # Audio only for now; the encode and the subtitles happen once
