@@ -53,20 +53,129 @@ DIALOGUE_TURN_PAUSE_SEC = 0.55
 ELLIPSIS_PAUSE_SEC = 1.5
 
 
+# ── Audio option resolution ───────────────────────────────────────────────────
+#
+# Everything below is user-configurable in Settings → Export Audio. Callers may
+# pass an explicit dict; when they pass nothing the values come from the saved
+# settings, so a change on the settings page takes effect on the next export
+# without restarting the app.
+
+# libmp3lame VBR quality (-q:a). 0 = best/largest … 9 = smallest.
+DEFAULT_MP3_VBR_QUALITY = 7
+# Constant bitrate in kbps, used when mode == 'cbr'.
+DEFAULT_MP3_BITRATE_KBPS = 48
+
+# Narration source is 24 kHz mono, so MPEG-2 Layer III applies: whatever is
+# requested above 160 kbps is silently clamped by the encoder anyway.
+MAX_MP3_BITRATE_KBPS = 160
+
+
+def default_audio_options() -> dict:
+    """Encoder + pause defaults, independent of the settings file."""
+    return {
+        'mp3_mode': 'vbr',
+        'mp3_vbr_quality': DEFAULT_MP3_VBR_QUALITY,
+        'mp3_bitrate': DEFAULT_MP3_BITRATE_KBPS,
+        'pause_segment': DEFAULT_SEGMENT_PAUSE_SEC,
+        'pause_dialogue': DIALOGUE_TURN_PAUSE_SEC,
+        'pause_ellipsis': ELLIPSIS_PAUSE_SEC,
+    }
+
+
+def audio_options(overrides: dict | None = None) -> dict:
+    """Resolve export audio options: defaults ← saved settings ← overrides.
+
+    Resolved once per export call and then passed down, so a whole chapter is
+    encoded and timed with one consistent set of values even if the user
+    changes a setting mid-export.
+    """
+    opts = default_audio_options()
+    try:
+        from core import settings as _app_settings
+        saved = _app_settings.load()
+    except Exception:                                    # settings are optional
+        saved = {}
+    for key, saved_key in (
+        ('mp3_mode', 'mp3_mode'),
+        ('mp3_vbr_quality', 'mp3_vbr_quality'),
+        ('mp3_bitrate', 'mp3_bitrate'),
+        ('pause_segment', 'export_pause_segment'),
+        ('pause_dialogue', 'export_pause_dialogue'),
+        ('pause_ellipsis', 'export_pause_ellipsis'),
+    ):
+        if saved.get(saved_key) is not None:
+            opts[key] = saved[saved_key]
+    for key, value in (overrides or {}).items():
+        if value is not None:
+            opts[key] = value
+
+    mode = str(opts.get('mp3_mode') or 'vbr').strip().lower()
+    opts['mp3_mode'] = mode if mode in ('vbr', 'cbr') else 'vbr'
+    opts['mp3_vbr_quality'] = _clamp_int(
+        opts.get('mp3_vbr_quality'), DEFAULT_MP3_VBR_QUALITY, 0, 9)
+    opts['mp3_bitrate'] = _clamp_int(
+        opts.get('mp3_bitrate'), DEFAULT_MP3_BITRATE_KBPS, 8, MAX_MP3_BITRATE_KBPS)
+    for key, fallback in (
+        ('pause_segment', DEFAULT_SEGMENT_PAUSE_SEC),
+        ('pause_dialogue', DIALOGUE_TURN_PAUSE_SEC),
+        ('pause_ellipsis', ELLIPSIS_PAUSE_SEC),
+    ):
+        opts[key] = _clamp_float(opts.get(key), fallback, 0.0, 5.0)
+    return opts
+
+
+def _clamp_int(value, fallback: int, low: int, high: int) -> int:
+    try:
+        return max(low, min(int(value), high))
+    except (TypeError, ValueError):
+        return fallback
+
+
+def _clamp_float(value, fallback: float, low: float, high: float) -> float:
+    try:
+        return max(low, min(float(value), high))
+    except (TypeError, ValueError):
+        return fallback
+
+
+def estimated_mp3_kbps(opts: dict | None = None) -> int:
+    """Rough average bitrate of the produced MP3, for size estimates in the UI.
+
+    VBR averages are measured on 24 kHz mono narration; real speech with its
+    inter-segment silence usually lands a little below these numbers.
+    """
+    opts = opts or audio_options()
+    if opts['mp3_mode'] == 'cbr':
+        return int(opts['mp3_bitrate'])
+    return {0: 96, 1: 88, 2: 80, 3: 70, 4: 62, 5: 55,
+            6: 50, 7: 44, 8: 43, 9: 34}.get(int(opts['mp3_vbr_quality']), 44)
+
+
 # ── ffmpeg / pydub detection ──────────────────────────────────────────────────
 
 def _ffmpeg_available() -> bool:
     return shutil.which('ffmpeg') is not None
 
 
-def _wav_to_mp3_bytes(wav_path: str) -> bytes | None:
+def _wav_to_mp3_bytes(wav_path: str, opts: dict | None = None) -> bytes | None:
+    """Encode the merged chapter WAV to MP3 with the configured settings.
+
+    The source is 24 kHz mono speech, so the useful range is far below music
+    bitrates. VBR is the default because the inter-segment silences cost almost
+    nothing, while CBR pays full price for them.
+    """
     if not _ffmpeg_available():
         return None
+    opts = opts or audio_options()
     try:
         from pydub import AudioSegment
         seg = AudioSegment.from_wav(wav_path)
         buf = io.BytesIO()
-        seg.export(buf, format='mp3', bitrate='192k')
+        if opts['mp3_mode'] == 'cbr':
+            seg.export(buf, format='mp3', bitrate=f"{opts['mp3_bitrate']}k")
+        else:
+            seg.export(buf, format='mp3',
+                       parameters=['-q:a', str(opts['mp3_vbr_quality'])])
         return buf.getvalue()
     except Exception as e:
         log.warning(f'MP3 conversion failed: {e}')
@@ -166,27 +275,32 @@ def build_srt(segments: list[dict]) -> str:
 
 # ── Audio merge ───────────────────────────────────────────────────────────────
 
-def pause_after_segment(segment: dict, next_segment: dict | None = None) -> float:
+def pause_after_segment(
+    segment: dict,
+    next_segment: dict | None = None,
+    opts: dict | None = None,
+) -> float:
     """Return the spoken-program pause after a segment.
 
     Ellipses represent an intentional trailing-off pause. Consecutive dialogue
     segments get a slightly longer beat so a new voice does not cut in
-    unnaturally fast.
+    unnaturally fast. All three lengths are configurable in Settings.
     """
+    opts = opts or default_audio_options()
     text = str(segment.get('text') or '').rstrip()
     text = text.rstrip('"\'”’»').rstrip()
     if text.endswith(('...', '…')):
-        return ELLIPSIS_PAUSE_SEC
+        return opts['pause_ellipsis']
     if (
         next_segment
         and segment.get('is_dialogue')
         and next_segment.get('is_dialogue')
     ):
-        return DIALOGUE_TURN_PAUSE_SEC
-    return DEFAULT_SEGMENT_PAUSE_SEC
+        return opts['pause_dialogue']
+    return opts['pause_segment']
 
 
-def _merge_wavs(segments: list[dict]) -> np.ndarray:
+def _merge_wavs(segments: list[dict], opts: dict | None = None) -> np.ndarray:
     arrays = []
     playable = [
         seg
@@ -201,17 +315,20 @@ def _merge_wavs(segments: list[dict]) -> np.ndarray:
                 data = data.mean(axis=1)
             arrays.append(data)
             if idx + 1 < len(playable):
-                pause = pause_after_segment(seg, playable[idx + 1])
+                pause = pause_after_segment(seg, playable[idx + 1], opts)
                 arrays.append(np.zeros(int(SAMPLE_RATE * pause)))
     return np.concatenate(arrays) if arrays else np.zeros(SAMPLE_RATE)
 
 
 # ── Segment timeline builder ──────────────────────────────────────────────────
 
-def build_timeline(segments_db: list[dict]) -> list[dict]:
+def build_timeline(segments_db: list[dict], opts: dict | None = None) -> list[dict]:
     """
     segments_db: rows from tts_segments with audio_path + duration_sec.
     Returns same list enriched with t_start / t_end fields.
+
+    Uses the same resolved options as the merge, so subtitle timings never
+    drift from the audio.
     """
     timeline = []
     cursor = 0.0
@@ -221,7 +338,7 @@ def build_timeline(segments_db: list[dict]) -> list[dict]:
         next_seg = segments_db[idx + 1] if idx + 1 < len(segments_db) else None
         cursor += dur
         if next_seg is not None:
-            cursor += pause_after_segment(seg, next_seg)
+            cursor += pause_after_segment(seg, next_seg, opts)
     return timeline
 
 
@@ -237,13 +354,17 @@ def export_single_chapter(
     output_dir: str | None = None,
     file_stem: str | None = None,
     author: str | None = None,
+    opts: dict | None = None,
 ) -> dict:
     """Returns {'audio_path': ..., 'subtitle_path': ..., 'audio_fmt': ..., 'sub_fmt': ...}"""
     output_dir = output_dir or book_export_dir(book_title, author)
     os.makedirs(output_dir, exist_ok=True)
     safe_title = _safe_name(file_stem or chapter_title)
-    timeline = build_timeline(segments)
-    merged = _merge_wavs(timeline)
+    # Idempotent: an already-resolved dict passed by the caller wins over the
+    # saved settings, so a whole book export keeps one consistent set.
+    opts = audio_options(opts)
+    timeline = build_timeline(segments, opts)
+    merged = _merge_wavs(timeline, opts)
 
     wav_path = os.path.join(output_dir, f'{safe_title}.wav')
     sf.write(wav_path, merged, SAMPLE_RATE)
@@ -251,7 +372,7 @@ def export_single_chapter(
     out_audio = wav_path
     actual_fmt = 'wav'
     if audio_fmt == 'mp3':
-        mp3 = _wav_to_mp3_bytes(wav_path)
+        mp3 = _wav_to_mp3_bytes(wav_path, opts)
         if mp3:
             out_audio = wav_path.replace('.wav', '.mp3')
             with open(out_audio, 'wb') as f:
@@ -280,16 +401,18 @@ def export_chapter_zip(
     audio_fmt: str = 'wav',
     sub_fmt: str = 'ass',
     author: str | None = None,
+    opts: dict | None = None,
 ) -> str:
     """chapters_data: list of {chapter_title, segments}. Returns zip file path."""
     safe_book = _safe_name(book_title)
     zip_path = os.path.join(book_export_dir(book_title, author), f'{safe_book}_chapters.zip')
+    opts = audio_options(opts)
 
     with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
         for ch in chapters_data:
             result = export_single_chapter(
                 ch['chapter_title'], book_title, ch['segments'],
-                character_colors, audio_fmt, sub_fmt, author=author,
+                character_colors, audio_fmt, sub_fmt, author=author, opts=opts,
             )
             ch_safe = _safe_name(ch['chapter_title'])
             ext = result['audio_fmt']
@@ -319,10 +442,12 @@ def export_chapter_folder(
     audio_fmt: str = 'wav',
     sub_fmt: str = 'ass',
     author: str | None = None,
+    opts: dict | None = None,
 ) -> dict:
     """Write numbered chapter files beneath ``exports/<Author>/<Title>``."""
     output_dir = book_export_dir(book_title, author)
     number_width = chapter_number_width(chapters_data)
+    opts = audio_options(opts)
     files = []
 
     for fallback_number, chapter in enumerate(chapters_data, 1):
@@ -338,6 +463,7 @@ def export_chapter_folder(
             sub_fmt,
             output_dir=output_dir,
             file_stem=stem,
+            opts=opts,
         ))
 
     return {'directory_path': output_dir, 'chapters': files}

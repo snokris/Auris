@@ -188,5 +188,6 @@
 {% block scripts %}
 <script>window.BOOK_ID = {{ book.id }};</script>
 <script>window.SINGLE_NARRATOR_MODE = {{ 1 if book.single_narrator_mode else 0 }};</script>
+<script>window.PAUSE_MS = {{ pause_ms | tojson }};</script>
 <script src="/static/js/reader.js"></script>
 {% endblock %}

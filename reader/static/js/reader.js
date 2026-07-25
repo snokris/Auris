@@ -33,9 +33,17 @@ let _preloadData = null;
 let _interSegmentTimer = null;
 let _pendingSegmentIdx = -1;
 
-const DEFAULT_SEGMENT_PAUSE_MS = 350;
-const DIALOGUE_TURN_PAUSE_MS = 550;
-const ELLIPSIS_PAUSE_MS = 1500;
+// Pause lengths come from the settings page (window.PAUSE_MS, injected by the
+// template) so playback matches the exported MP3 exactly. The literals below
+// are only the fallback when the page is rendered without them.
+function _configuredPauseMs(key, fallback) {
+  const value = Number(window.PAUSE_MS?.[key]);
+  // 0 is a legal setting ("no pause"), so check for a finite number, not truthiness.
+  return Number.isFinite(value) && value >= 0 ? value : fallback;
+}
+const DEFAULT_SEGMENT_PAUSE_MS = _configuredPauseMs('segment', 350);
+const DIALOGUE_TURN_PAUSE_MS = _configuredPauseMs('dialogue', 550);
+const ELLIPSIS_PAUSE_MS = _configuredPauseMs('ellipsis', 1500);
 
 // Monotonic counter — incremented on every new playSegment and on stopPlayback.
 // Each playSegment captures its generation at entry; stale async continuations

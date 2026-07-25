@@ -134,6 +134,28 @@ async function loadSettings() {
   document.getElementById('audio-format').value    = _settings.audio_format    || 'wav';
   document.getElementById('subtitle-format').value = _settings.subtitle_format || 'ass';
 
+  // Export audio — MP3 encoding and pauses
+  const info = _settings._audio_info || {};
+  if (info.kbps_by_vbr_quality) _kbpsByVbrQuality = info.kbps_by_vbr_quality;
+  const ffmpegHint = document.getElementById('ffmpeg-hint');
+  if (ffmpegHint) {
+    ffmpegHint.textContent = info.ffmpeg === false
+      ? 'ffmpeg was not found on PATH — MP3 export silently falls back to WAV.'
+      : `Source audio is ${(info.sample_rate || 24000) / 1000} kHz mono.`;
+    ffmpegHint.classList.toggle('status-error', info.ffmpeg === false);
+  }
+  const mp3Mode = document.getElementById('mp3-mode');
+  if (mp3Mode) mp3Mode.value = _settings.mp3_mode || 'vbr';
+  _selectOrDefault('mp3-vbr-quality', _settings.mp3_vbr_quality ?? 7, '7');
+  _selectOrDefault('mp3-bitrate', _settings.mp3_bitrate ?? 48, '48');
+  document.getElementById('pause-segment').value =
+    _settings.export_pause_segment ?? PAUSE_DEFAULTS.segment;
+  document.getElementById('pause-dialogue').value =
+    _settings.export_pause_dialogue ?? PAUSE_DEFAULTS.dialogue;
+  document.getElementById('pause-ellipsis').value =
+    _settings.export_pause_ellipsis ?? PAUSE_DEFAULTS.ellipsis;
+  updateAudioEstimate();
+
   refreshAccelStatus();
 
   // UI — theme. The browser-local value wins for display (the reader's
@@ -496,6 +518,12 @@ async function saveSettings() {
     ) || 0,
     audio_format:      document.getElementById('audio-format').value,
     subtitle_format:   document.getElementById('subtitle-format').value,
+    mp3_mode:          document.getElementById('mp3-mode')?.value || 'vbr',
+    mp3_vbr_quality:   parseInt(document.getElementById('mp3-vbr-quality')?.value || '7', 10),
+    mp3_bitrate:       parseInt(document.getElementById('mp3-bitrate')?.value || '48', 10),
+    export_pause_segment:  _pauseValue('pause-segment', PAUSE_DEFAULTS.segment),
+    export_pause_dialogue: _pauseValue('pause-dialogue', PAUSE_DEFAULTS.dialogue),
+    export_pause_ellipsis: _pauseValue('pause-ellipsis', PAUSE_DEFAULTS.ellipsis),
     theme:             document.getElementById('theme-select').value,
     font_family:       document.getElementById('font-family').value,
     font_size:         parseInt(document.getElementById('font-size').value) || 18,
@@ -520,6 +548,82 @@ async function saveSettings() {
     hint.textContent = d.error || 'Save failed.';
     hint.className   = 'status-hint status-error';
   }
+}
+
+// ── Export audio (MP3 encoding + pauses) ──────────────────────────────────────
+
+// Average kbps per libmp3lame VBR quality at 24 kHz mono. The server sends the
+// authoritative table in `_audio_info` (see exporter.estimated_mp3_kbps); this
+// is only the fallback when the settings request has not landed yet.
+let _kbpsByVbrQuality = {0:96, 1:88, 2:80, 3:70, 4:62, 5:55, 6:50, 7:44, 8:43, 9:34};
+
+const PAUSE_DEFAULTS = { segment: 0.35, dialogue: 0.55, ellipsis: 1.5 };
+
+function currentMp3Kbps() {
+  const mode = document.getElementById('mp3-mode')?.value || 'vbr';
+  if (mode === 'cbr') {
+    return parseInt(document.getElementById('mp3-bitrate')?.value || '48', 10);
+  }
+  const q = document.getElementById('mp3-vbr-quality')?.value || '7';
+  return _kbpsByVbrQuality[q] ?? 44;
+}
+
+function updateAudioEstimate() {
+  const mode = document.getElementById('mp3-mode')?.value || 'vbr';
+  document.getElementById('mp3-vbr-row')?.classList.toggle('hidden', mode !== 'vbr');
+  document.getElementById('mp3-cbr-row')?.classList.toggle('hidden', mode === 'vbr');
+
+  const main = document.getElementById('audio-estimate-main');
+  const sub  = document.getElementById('audio-estimate-sub');
+  if (!main) return;
+
+  const isMp3 = (document.getElementById('audio-format')?.value || 'wav') === 'mp3';
+  if (!isMp3) {
+    // 24 kHz, 16-bit, mono = 48 000 bytes per second.
+    main.textContent = 'WAV — about 165 MB per hour of audio';
+    sub.textContent  = 'Switch Audio format to MP3 to use the settings below.';
+    return;
+  }
+  const kbps = currentMp3Kbps();
+  const mbPerHour = kbps * 3600 / 8 / 1024;
+  main.textContent =
+    `≈ ${kbps} kbps — about ${mbPerHour.toFixed(0)} MB per hour of audio`;
+  sub.textContent =
+    `A 24-hour audiobook lands around ${(mbPerHour * 24 / 1024).toFixed(1)} GB ` +
+    `(the same book was ${(160 * 3600 / 8 / 1024 * 24 / 1024).toFixed(1)} GB ` +
+    `at the old fixed 160 kbps).`;
+}
+
+function applySpeechPreset() {
+  document.getElementById('audio-format').value    = 'mp3';
+  document.getElementById('mp3-mode').value        = 'vbr';
+  document.getElementById('mp3-vbr-quality').value = '7';
+  document.getElementById('mp3-bitrate').value     = '48';
+  updateAudioEstimate();
+  const hint = document.getElementById('save-hint');
+  if (hint) {
+    hint.textContent = 'Narration preset selected — click Save Settings to apply.';
+    hint.className = 'status-hint';
+  }
+}
+
+function _selectOrDefault(id, value, fallback) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const wanted = String(value);
+  el.value = [...el.options].some(o => o.value === wanted) ? wanted : fallback;
+}
+
+function _pauseValue(id, fallback) {
+  const raw = parseFloat(document.getElementById(id)?.value);
+  if (!Number.isFinite(raw)) return fallback;
+  return Math.round(Math.max(0, Math.min(raw, 5)) * 100) / 100;
+}
+
+function resetPauses() {
+  document.getElementById('pause-segment').value  = PAUSE_DEFAULTS.segment;
+  document.getElementById('pause-dialogue').value = PAUSE_DEFAULTS.dialogue;
+  document.getElementById('pause-ellipsis').value = PAUSE_DEFAULTS.ellipsis;
 }
 
 // ── Audio cache ───────────────────────────────────────────────────────────────

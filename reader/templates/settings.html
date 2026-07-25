@@ -406,10 +406,11 @@
     <div class="settings-section-title">Output Defaults</div>
     <div class="setting-row">
       <label>Audio format</label>
-      <select id="audio-format" class="select-input">
+      <select id="audio-format" class="select-input" onchange="updateAudioEstimate()">
         <option value="wav">WAV — lossless, always available</option>
         <option value="mp3">MP3 — requires ffmpeg on PATH</option>
       </select>
+      <span class="muted" style="font-size:.78rem" id="ffmpeg-hint"></span>
     </div>
     <div class="setting-row">
       <label>Subtitle format</label>
@@ -417,6 +418,105 @@
         <option value="ass">ASS — styled, per-character colours</option>
         <option value="srt">SRT — plain, universally supported</option>
       </select>
+    </div>
+  </section>
+
+  <!-- MP3 encoding -->
+  <section class="settings-section">
+    <div class="settings-section-title">
+      MP3 Encoding
+      <button class="btn btn-ghost btn-sm" style="float:right" onclick="applySpeechPreset()">
+        Recommended for narration
+      </button>
+    </div>
+
+    <div class="audio-estimate" id="audio-estimate">
+      <div class="audio-estimate-main" id="audio-estimate-main">—</div>
+      <div class="audio-estimate-sub" id="audio-estimate-sub"></div>
+    </div>
+
+    <div class="setting-row">
+      <label>Bitrate mode</label>
+      <select id="mp3-mode" class="select-input" onchange="updateAudioEstimate()">
+        <option value="vbr">VBR — variable, smallest for speech (recommended)</option>
+        <option value="cbr">CBR — constant, most compatible with old players</option>
+      </select>
+      <span class="muted" style="font-size:.78rem">
+        Narration is mostly speech separated by short silences. VBR spends
+        almost nothing on those pauses, so at the same perceived quality it
+        produces a noticeably smaller file than CBR.
+      </span>
+    </div>
+
+    <div class="setting-row" id="mp3-vbr-row">
+      <label>VBR quality</label>
+      <select id="mp3-vbr-quality" class="select-input" onchange="updateAudioEstimate()">
+        <option value="3">3 — highest quality, largest (~70 kbps)</option>
+        <option value="5">5 — high quality (~55 kbps)</option>
+        <option value="6">6 — good (~50 kbps)</option>
+        <option value="7">7 — recommended for narration (~44 kbps)</option>
+        <option value="8">8 — smaller (~43 kbps)</option>
+        <option value="9">9 — smallest, audible artefacts (~34 kbps)</option>
+      </select>
+      <span class="muted" style="font-size:.78rem">
+        libmp3lame <code>-q:a</code>. The source is 24 kHz mono, so these land
+        far below the numbers you would need for music. <strong>7</strong> is
+        clean for a single narrator voice and about a quarter the size of the
+        old fixed 160 kbps output.
+      </span>
+    </div>
+
+    <div class="setting-row" id="mp3-cbr-row">
+      <label>Constant bitrate</label>
+      <select id="mp3-bitrate" class="select-input" onchange="updateAudioEstimate()">
+        <option value="32">32 kbps — smallest, clearly compressed</option>
+        <option value="40">40 kbps</option>
+        <option value="48">48 kbps — recommended for narration</option>
+        <option value="64">64 kbps — safe, still small</option>
+        <option value="96">96 kbps — generous</option>
+        <option value="128">128 kbps</option>
+        <option value="160">160 kbps — maximum at 24 kHz</option>
+      </select>
+      <span class="muted" style="font-size:.78rem">
+        24 kHz mono is MPEG-2 Layer III, whose ceiling is 160 kbps — a higher
+        request is silently clamped by the encoder.
+      </span>
+    </div>
+  </section>
+
+  <!-- Pauses -->
+  <section class="settings-section">
+    <div class="settings-section-title">
+      Spoken Pauses
+      <button class="btn btn-ghost btn-sm" style="float:right" onclick="resetPauses()">
+        Reset to defaults
+      </button>
+    </div>
+    <div class="setting-row">
+      <label>Between sentences</label>
+      <input type="number" id="pause-segment" class="text-input" style="max-width:8rem"
+             min="0" max="5" step="0.05" onchange="updateAudioEstimate()">
+      <span class="muted" style="font-size:.78rem">
+        Seconds of silence between two ordinary segments (default 0.35).
+      </span>
+    </div>
+    <div class="setting-row">
+      <label>Between dialogue turns</label>
+      <input type="number" id="pause-dialogue" class="text-input" style="max-width:8rem"
+             min="0" max="5" step="0.05">
+      <span class="muted" style="font-size:.78rem">
+        Slightly longer beat when a new speaker takes over (default 0.55).
+      </span>
+    </div>
+    <div class="setting-row">
+      <label>After “…”</label>
+      <input type="number" id="pause-ellipsis" class="text-input" style="max-width:8rem"
+             min="0" max="5" step="0.05">
+      <span class="muted" style="font-size:.78rem">
+        An ellipsis is a deliberate trailing-off pause (default 1.5).
+        These lengths apply to both the exported audio and in-app playback,
+        and the subtitle timings follow them automatically.
+      </span>
     </div>
   </section>
 

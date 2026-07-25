@@ -319,7 +319,18 @@ def reader_page(book_id):
     book_data['single_narrator_mode'] = _book_single_narrator_mode(book_data)
     if not _character_analysis_is_active():
         tts.load_async()
-    return render_template('reader.html', book=book_data)
+    # Playback uses the same pause lengths as the export, so what the user
+    # hears in the reader matches the produced MP3 exactly.
+    audio_opts = exporter.audio_options()
+    return render_template(
+        'reader.html',
+        book=book_data,
+        pause_ms={
+            'segment': int(audio_opts['pause_segment'] * 1000),
+            'dialogue': int(audio_opts['pause_dialogue'] * 1000),
+            'ellipsis': int(audio_opts['pause_ellipsis'] * 1000),
+        },
+    )
 
 
 @app.route('/voice-studio/<int:book_id>')
@@ -2268,6 +2279,9 @@ def _run_chapterwise_export(
         colors = _get_char_colors(book_id)
         exportable = [c for c in chapters_data if c['segments']]
         number_width = exporter.chapter_number_width(exportable)
+        # Resolved once so every chapter of this run is encoded and timed
+        # identically, even if the settings page changes mid-export.
+        audio_opts = exporter.audio_options()
         output_dir = exporter.book_export_dir(book['title'], book['author'])
         written = 0
         for ch_data in chapters_data:
@@ -2305,6 +2319,7 @@ def _run_chapterwise_export(
                 colors, audio_fmt, sub_fmt,
                 output_dir=output_dir,
                 file_stem=stem,
+                opts=audio_opts,
             )
             written += 1
             job['chapters_written'] = written
@@ -2720,7 +2735,21 @@ def docs_page():
 
 @app.route('/api/settings', methods=['GET'])
 def get_settings():
-    return jsonify(app_settings.load())
+    data = app_settings.load()
+    # Read-only extras for the settings page. Prefixed so they can never be
+    # mistaken for stored settings (the save allowlist would drop them anyway).
+    data['_audio_info'] = {
+        'sample_rate': exporter.SAMPLE_RATE,
+        'channels': 1,
+        'ffmpeg': exporter._ffmpeg_available(),
+        'max_bitrate': exporter.MAX_MP3_BITRATE_KBPS,
+        'kbps_by_vbr_quality': {
+            str(q): exporter.estimated_mp3_kbps(
+                {'mp3_mode': 'vbr', 'mp3_vbr_quality': q})
+            for q in range(10)
+        },
+    }
+    return jsonify(data)
 
 
 @app.route('/api/settings', methods=['POST'])
@@ -2741,6 +2770,8 @@ def save_settings():
         'character_detection_mode', 'llm_base_url', 'llm_api_key', 'llm_model',
         'llm_timeout_sec', 'llm_max_output_tokens', 'llm_max_characters',
         'llm_batch_chars',
+        'mp3_mode', 'mp3_vbr_quality', 'mp3_bitrate',
+        'export_pause_segment', 'export_pause_dialogue', 'export_pause_ellipsis',
     }
     updates = {k: v for k, v in body.items() if k in allowed}
     if 'tts_engine' in updates:
@@ -2841,6 +2872,29 @@ def save_settings():
             )
         except (TypeError, ValueError):
             updates['tts_export_workers'] = 0
+    if 'mp3_mode' in updates:
+        mode = str(updates['mp3_mode'] or 'vbr').strip().lower()
+        updates['mp3_mode'] = mode if mode in ('vbr', 'cbr') else 'vbr'
+    for key, default, low, high in (
+        ('mp3_vbr_quality', 7, 0, 9),
+        # 24 kHz mono is MPEG-2 Layer III: the encoder clamps above 160 kbps.
+        ('mp3_bitrate', 48, 8, exporter.MAX_MP3_BITRATE_KBPS),
+    ):
+        if key in updates:
+            try:
+                updates[key] = max(low, min(int(updates[key]), high))
+            except (TypeError, ValueError):
+                updates[key] = default
+    for key, default in (
+        ('export_pause_segment', 0.35),
+        ('export_pause_dialogue', 0.55),
+        ('export_pause_ellipsis', 1.5),
+    ):
+        if key in updates:
+            try:
+                updates[key] = round(max(0.0, min(float(updates[key]), 5.0)), 2)
+            except (TypeError, ValueError):
+                updates[key] = default
     result = app_settings.save(updates)
 
     # Accel mode change requires model reload to re-wrap forward().

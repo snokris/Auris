@@ -119,6 +119,19 @@ DEFAULTS: dict = {
     'audio_format': 'wav',
     'subtitle_format': 'ass',
 
+    # MP3 encoding. The TTS output is 24 kHz mono speech, so MPEG-2 Layer III
+    # applies and anything above 160 kbps is clamped by the encoder anyway.
+    # VBR is the default: the silence between segments costs almost nothing,
+    # while CBR pays full price for it.
+    'mp3_mode': 'vbr',                 # 'vbr' | 'cbr'
+    'mp3_vbr_quality': 7,              # libmp3lame -q:a, 0 = best … 9 = smallest
+    'mp3_bitrate': 48,                 # kbps, used when mp3_mode == 'cbr'
+
+    # Spoken-program pauses (seconds). Used by both export and playback.
+    'export_pause_segment': 0.35,      # between ordinary sentences
+    'export_pause_dialogue': 0.55,     # between two consecutive dialogue turns
+    'export_pause_ellipsis': 1.5,      # after a trailing "..." / "…"
+
     # UI
     'theme': 'light',
     'font_size': 18,
