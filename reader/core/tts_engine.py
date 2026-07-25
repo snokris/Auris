@@ -21,6 +21,8 @@ from pathlib import Path
 import numpy as np
 import soundfile as sf
 
+from core.hungarian_numbers import looks_hungarian, normalize_hungarian
+
 log = logging.getLogger(__name__)
 
 AUDIO_CACHE_DIR = str(Path(__file__).resolve().parent.parent / "audio_cache")
@@ -491,6 +493,9 @@ def _apply_with_bracket_protection(text: str, fn) -> str:
 
 def _num2words_fallback(text: str, language: str | None) -> str:
     """Best-effort integer expansion when full TN is unavailable."""
+    if looks_hungarian(language, text):
+        return _apply_with_bracket_protection(text, normalize_hungarian)
+
     try:
         from num2words import num2words
     except ImportError:
@@ -549,6 +554,12 @@ def apply_text_normalization(text: str, language: str | None = None) -> str:
     """
     if not text or not text.strip():
         return text
+
+    # 0) Hungarian has its own reader. The upstream normalizers only know
+    # English/Chinese/Japanese, and num2words' Hungarian tables get ordinals
+    # wrong above a hundred, so Hungarian never reaches them.
+    if looks_hungarian(language, text):
+        return _apply_with_bracket_protection(text, normalize_hungarian)
 
     # 1) Upstream OmniVoice TN (needs WeTextProcessing → pynini).
     try:
