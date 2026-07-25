@@ -131,6 +131,13 @@ DEFAULTS: dict = {
     'export_pause_segment': 0.35,      # between ordinary sentences
     'export_pause_dialogue': 0.55,     # between two consecutive dialogue turns
     'export_pause_ellipsis': 1.5,      # after a trailing "..." / "…"
+    'export_pause_chapter': 2.0,       # between two chapters in a joined file
+
+    # Joined output. When on, the export writes no per-chapter files at all:
+    # once every chapter's audio exists it is concatenated into 1-4 files,
+    # each encoded once, with subtitles retimed to match.
+    'export_join_parts': False,
+    'export_part_count': 1,            # 1-4
 
     # UI
     'theme': 'light',

@@ -869,6 +869,21 @@ code {
   color: var(--text2);
   font-size: 0.7rem;
 }
+.join-parts { margin: 8px 0 0 20px; }
+.join-parts label { margin-bottom: 3px; }
+.join-parts input[type="range"] { width: 100%; }
+.join-parts output {
+  display: block;
+  margin-top: 2px;
+  font-size: 0.78rem;
+  color: var(--text);
+}
+.join-parts small {
+  display: block;
+  margin-top: 4px;
+  color: var(--text2);
+  font-size: 0.7rem;
+}
 .export-progress-wrap {
   height: 5px; background: var(--bg3); border-radius: 999px;
   margin: 4px 0 10px; overflow: hidden; display: none;

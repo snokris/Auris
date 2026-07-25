@@ -108,6 +108,21 @@
           {% endif %}
           <label><input type="radio" name="exp-sub" value="srt"{% if book.single_narrator_mode %} checked{% endif %}> SRT (plain)</label>
         </div>
+        <div class="export-section" id="export-join-section">
+          <b>Joined output</b>
+          <label>
+            <input type="checkbox" id="exp-join"> Join chapters into whole files
+          </label>
+          <div id="exp-parts-wrap" class="join-parts hidden">
+            <label for="exp-parts">Number of files</label>
+            <input id="exp-parts" type="range" min="1" max="4" step="1" value="1">
+            <output id="exp-parts-value" for="exp-parts">1</output>
+            <small id="exp-join-note">
+              No per-chapter files are written: every chapter is rendered first,
+              then joined and encoded once. Subtitles are retimed to match.
+            </small>
+          </div>
+        </div>
       </fieldset>
 
       <button class="btn btn-primary btn-full" id="do-export-btn">Generate export</button>

@@ -1568,6 +1568,11 @@ def _refresh_export_job_fields(job: dict | None) -> None:
 
     job['eta_sec'] = eta_sec
 
+    if job.get('phase') == 'joining':
+        # Synthesis is finished and its counters are final — the job runner
+        # owns the message from here, so polling must not overwrite it.
+        return
+
     if total > 0:
         msg = f'Generating audio ({done}/{total})'
         if eta_sec is not None and done < total:
@@ -2112,16 +2117,40 @@ def _make_export_job(book_id: int | None = None) -> tuple[str, dict]:
     return job_id, job
 
 
-def _save_export_prefs(book_id: int, mode: str, chapters, audio_fmt: str, sub_fmt: str):
+def _save_export_prefs(book_id: int, mode: str, chapters, audio_fmt: str, sub_fmt: str,
+                       join_parts: bool = False, part_count: int = 1):
     with get_conn() as conn:
         conn.execute(
-            'INSERT INTO export_prefs (book_id, mode, chapters, audio_fmt, sub_fmt, updated_at) '
-            "VALUES (?, ?, ?, ?, ?, datetime('now')) "
+            'INSERT INTO export_prefs '
+            '(book_id, mode, chapters, audio_fmt, sub_fmt, join_parts, part_count, updated_at) '
+            "VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now')) "
             'ON CONFLICT(book_id) DO UPDATE SET mode=excluded.mode, '
             'chapters=excluded.chapters, audio_fmt=excluded.audio_fmt, '
-            'sub_fmt=excluded.sub_fmt, updated_at=excluded.updated_at',
-            (book_id, mode, chapters, audio_fmt, sub_fmt),
+            'sub_fmt=excluded.sub_fmt, join_parts=excluded.join_parts, '
+            'part_count=excluded.part_count, updated_at=excluded.updated_at',
+            (book_id, mode, chapters, audio_fmt, sub_fmt,
+             1 if join_parts else 0, int(part_count)),
         )
+
+
+def _clamp_part_count(value) -> int:
+    """Slider position as a usable 1..MAX_PART_COUNT file count."""
+    try:
+        return max(1, min(int(value), exporter.MAX_PART_COUNT))
+    except (TypeError, ValueError):
+        return 1
+
+
+def _read_join_request(body: dict) -> tuple[bool, int]:
+    """Join switch + part slider from a request body, falling back to Settings."""
+    saved = app_settings.load()
+    join = body.get('join_parts')
+    if join is None:
+        join = saved.get('export_join_parts', False)
+    count = body.get('part_count')
+    if count is None:
+        count = saved.get('export_part_count', 1)
+    return bool(join), _clamp_part_count(count)
 
 
 class _ExportInterrupted(BaseException):
@@ -2237,15 +2266,58 @@ def _run_chapter_export(job_id: str, book_id: int, chapter_id: int, audio_fmt: s
         _export_exclusive_end()
 
 
+def _join_chapters_into_parts(
+    job: dict,
+    book: dict,
+    rendered: list[dict],
+    colors: dict,
+    audio_fmt: str,
+    sub_fmt: str,
+    output_dir: str,
+    part_count: int,
+    audio_opts: dict,
+) -> list[dict]:
+    """Concatenate the rendered chapter WAVs into 1–4 audio files."""
+    groups = exporter.split_chapters_into_parts(
+        [ch['duration_sec'] for ch in rendered], part_count)
+    total = len(groups)
+    results = []
+    job['phase'] = 'joining'
+    job['part_total'] = total
+    for index, group in enumerate(groups, 1):
+        _check_export_control(job)
+        job['message'] = (
+            f'Joining and encoding part {index}/{total} '
+            f"({len(group)} chapter{'s' if len(group) != 1 else ''})…"
+        )
+        job['chapter_title'] = ''
+        stem = exporter.part_file_stem(book['title'], index, total)
+        results.append(exporter.export_joined_part(
+            book['title'],
+            [rendered[i] for i in group],
+            colors,
+            output_dir=output_dir,
+            file_stem=stem,
+            audio_fmt=audio_fmt,
+            sub_fmt=sub_fmt,
+            opts=audio_opts,
+        ))
+        job['parts_written'] = index
+    return results
+
+
 def _run_chapterwise_export(
     job_id: str,
     book_id: int,
     audio_fmt: str,
     sub_fmt: str,
     chapter_numbers: list[int],
+    join_parts: bool = False,
+    part_count: int = 1,
 ):
     job = _export_jobs[job_id]
     export_pool: TTSExportPool | None = None
+    join_dir: str | None = None
     _export_exclusive_begin()
     try:
         job['state'] = 'running'
@@ -2283,6 +2355,14 @@ def _run_chapterwise_export(
         # identically, even if the settings page changes mid-export.
         audio_opts = exporter.audio_options()
         output_dir = exporter.book_export_dir(book['title'], book['author'])
+        # When joining, chapters are rendered to WAV in a scratch folder and
+        # encoded once per part at the end — a joined MP3 is therefore never a
+        # re-compressed copy of per-chapter MP3s.
+        if join_parts:
+            join_dir = os.path.join(output_dir, '.joining')
+            shutil.rmtree(join_dir, ignore_errors=True)
+            os.makedirs(join_dir, exist_ok=True)
+        rendered: list[dict] = []
         written = 0
         for ch_data in chapters_data:
             _check_export_control(job)
@@ -2312,22 +2392,40 @@ def _run_chapterwise_export(
                 ch_data['chapter_title'],
                 number_width,
             )
-            exporter.export_single_chapter(
-                ch_data['chapter_title'],
-                book['title'],
-                ch_data['segments'],
-                colors, audio_fmt, sub_fmt,
-                output_dir=output_dir,
-                file_stem=stem,
-                opts=audio_opts,
-            )
+            if join_parts:
+                # Audio only for now; the encode and the subtitles happen once
+                # per part after the last chapter is ready.
+                chapter = exporter.render_chapter_wav(
+                    ch_data['segments'], join_dir, stem, audio_opts)
+                chapter['chapter_title'] = ch_data['chapter_title']
+                rendered.append(chapter)
+            else:
+                exporter.export_single_chapter(
+                    ch_data['chapter_title'],
+                    book['title'],
+                    ch_data['segments'],
+                    colors, audio_fmt, sub_fmt,
+                    output_dir=output_dir,
+                    file_stem=stem,
+                    opts=audio_opts,
+                )
             written += 1
             job['chapters_written'] = written
+
+        parts = []
+        if join_parts and rendered:
+            parts = _join_chapters_into_parts(
+                job, book, rendered, colors, audio_fmt, sub_fmt,
+                output_dir, part_count, audio_opts,
+            )
+
         job['state'] = 'complete'
         job['message'] = 'Done'
         job['result'] = {
             'export_path': output_dir,
             'chapter_count': written,
+            'part_count': len(parts),
+            'parts': [os.path.basename(p['audio_path']) for p in parts],
         }
         _set_export_status(book_id, None)
     except _ExportInterrupted as interrupt:
@@ -2347,6 +2445,11 @@ def _run_chapterwise_export(
     finally:
         if export_pool is not None:
             export_pool.close()
+        # The scratch WAVs are only worth keeping during the run: rebuilding
+        # them from the audio cache costs no GPU time, so a resumed export
+        # simply re-renders them.
+        if join_dir:
+            shutil.rmtree(join_dir, ignore_errors=True)
         _export_exclusive_end()
 
 
@@ -2412,9 +2515,11 @@ def export_full(book_id):
         if active and active.get('state') in ('pending', 'running'):
             return jsonify({'error': 'Chapter audio generation is already running.'}), 409
         job_id, _ = _make_export_job()
+    join_parts, part_count = _read_join_request(body)
     threading.Thread(
         target=_run_chapterwise_export,
-        args=(job_id, book_id, audio_fmt, sub_fmt, chapter_numbers),
+        args=(job_id, book_id, audio_fmt, sub_fmt, chapter_numbers,
+              join_parts, part_count),
         daemon=True,
     ).start()
     return jsonify({'job_id': job_id})
@@ -2455,13 +2560,16 @@ def export_chapterwise(book_id):
         if active and active.get('state') in ('pending', 'running'):
             return jsonify({'error': 'Chapter audio generation is already running.'}), 409
         job_id, _ = _make_export_job(book_id)
+    join_parts, part_count = _read_join_request(body)
     _save_export_prefs(
-        book_id, 'chapterwise', body.get('chapters'), audio_fmt, sub_fmt
+        book_id, 'chapterwise', body.get('chapters'), audio_fmt, sub_fmt,
+        join_parts, part_count,
     )
     _set_export_status(book_id, 'running')
     threading.Thread(
         target=_run_chapterwise_export,
-        args=(job_id, book_id, audio_fmt, sub_fmt, chapter_numbers),
+        args=(job_id, book_id, audio_fmt, sub_fmt, chapter_numbers,
+              join_parts, part_count),
         daemon=True,
     ).start()
     return jsonify({'job_id': job_id})
@@ -2498,7 +2606,8 @@ def export_state(book_id):
     """
     with get_conn() as conn:
         prefs_row = conn.execute(
-            'SELECT mode, chapters, audio_fmt, sub_fmt, status, updated_at '
+            'SELECT mode, chapters, audio_fmt, sub_fmt, status, '
+            'join_parts, part_count, updated_at '
             'FROM export_prefs WHERE book_id=?', (book_id,)
         ).fetchone()
         counts = conn.execute(
@@ -2511,6 +2620,16 @@ def export_state(book_id):
             (book_id,)
         ).fetchall()
     prefs = dict(prefs_row) if prefs_row else None
+    if prefs is not None:
+        prefs['join_parts'] = bool(prefs.get('join_parts'))
+        prefs['part_count'] = _clamp_part_count(prefs.get('part_count'))
+    # A book that has never been exported starts from the Settings defaults.
+    saved = app_settings.load()
+    join_defaults = {
+        'join_parts': bool(saved.get('export_join_parts', False)),
+        'part_count': _clamp_part_count(saved.get('export_part_count')),
+        'max_part_count': exporter.MAX_PART_COUNT,
+    }
 
     # ready/total over the saved selection (whole book when none saved).
     selected = None
@@ -2548,6 +2667,7 @@ def export_state(book_id):
     other = _active_export_row(exclude_book=book_id)
     return jsonify({
         'prefs': prefs,
+        'join_defaults': join_defaults,
         'active_job': active,
         'status': status,
         'ready': ready,
@@ -2772,6 +2892,7 @@ def save_settings():
         'llm_batch_chars',
         'mp3_mode', 'mp3_vbr_quality', 'mp3_bitrate',
         'export_pause_segment', 'export_pause_dialogue', 'export_pause_ellipsis',
+        'export_pause_chapter', 'export_join_parts', 'export_part_count',
     }
     updates = {k: v for k, v in body.items() if k in allowed}
     if 'tts_engine' in updates:
@@ -2895,6 +3016,22 @@ def save_settings():
                 updates[key] = round(max(0.0, min(float(updates[key]), 5.0)), 2)
             except (TypeError, ValueError):
                 updates[key] = default
+    # A chapter break is a structural pause, so it may run longer than the
+    # in-sentence pauses above.
+    if 'export_pause_chapter' in updates:
+        try:
+            updates['export_pause_chapter'] = round(
+                max(0.0, min(float(updates['export_pause_chapter']), 10.0)), 2)
+        except (TypeError, ValueError):
+            updates['export_pause_chapter'] = exporter.CHAPTER_BREAK_PAUSE_SEC
+    if 'export_join_parts' in updates:
+        updates['export_join_parts'] = bool(updates['export_join_parts'])
+    if 'export_part_count' in updates:
+        try:
+            updates['export_part_count'] = max(
+                1, min(int(updates['export_part_count']), exporter.MAX_PART_COUNT))
+        except (TypeError, ValueError):
+            updates['export_part_count'] = 1
     result = app_settings.save(updates)
 
     # Accel mode change requires model reload to re-wrap forward().

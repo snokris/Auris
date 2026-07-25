@@ -154,6 +154,13 @@ async function loadSettings() {
     _settings.export_pause_dialogue ?? PAUSE_DEFAULTS.dialogue;
   document.getElementById('pause-ellipsis').value =
     _settings.export_pause_ellipsis ?? PAUSE_DEFAULTS.ellipsis;
+  document.getElementById('pause-chapter').value =
+    _settings.export_pause_chapter ?? PAUSE_DEFAULTS.chapter;
+  const joinBox = document.getElementById('export-join-parts');
+  if (joinBox) joinBox.checked = !!_settings.export_join_parts;
+  const partCount = document.getElementById('export-part-count');
+  if (partCount) partCount.value = _settings.export_part_count || 1;
+  updateJoinControls();
   updateAudioEstimate();
 
   refreshAccelStatus();
@@ -524,6 +531,11 @@ async function saveSettings() {
     export_pause_segment:  _pauseValue('pause-segment', PAUSE_DEFAULTS.segment),
     export_pause_dialogue: _pauseValue('pause-dialogue', PAUSE_DEFAULTS.dialogue),
     export_pause_ellipsis: _pauseValue('pause-ellipsis', PAUSE_DEFAULTS.ellipsis),
+    export_pause_chapter:  _pauseValue('pause-chapter', PAUSE_DEFAULTS.chapter, 10),
+    export_join_parts:  document.getElementById('export-join-parts')?.checked || false,
+    export_part_count:  parseInt(
+      document.getElementById('export-part-count')?.value || '1', 10
+    ) || 1,
     theme:             document.getElementById('theme-select').value,
     font_family:       document.getElementById('font-family').value,
     font_size:         parseInt(document.getElementById('font-size').value) || 18,
@@ -557,7 +569,7 @@ async function saveSettings() {
 // is only the fallback when the settings request has not landed yet.
 let _kbpsByVbrQuality = {0:96, 1:88, 2:80, 3:70, 4:62, 5:55, 6:50, 7:44, 8:43, 9:34};
 
-const PAUSE_DEFAULTS = { segment: 0.35, dialogue: 0.55, ellipsis: 1.5 };
+const PAUSE_DEFAULTS = { segment: 0.35, dialogue: 0.55, ellipsis: 1.5, chapter: 2.0 };
 
 function currentMp3Kbps() {
   const mode = document.getElementById('mp3-mode')?.value || 'vbr';
@@ -614,16 +626,32 @@ function _selectOrDefault(id, value, fallback) {
   el.value = [...el.options].some(o => o.value === wanted) ? wanted : fallback;
 }
 
-function _pauseValue(id, fallback) {
+function _pauseValue(id, fallback, max = 5) {
   const raw = parseFloat(document.getElementById(id)?.value);
   if (!Number.isFinite(raw)) return fallback;
-  return Math.round(Math.max(0, Math.min(raw, 5)) * 100) / 100;
+  return Math.round(Math.max(0, Math.min(raw, max)) * 100) / 100;
 }
 
 function resetPauses() {
   document.getElementById('pause-segment').value  = PAUSE_DEFAULTS.segment;
   document.getElementById('pause-dialogue').value = PAUSE_DEFAULTS.dialogue;
   document.getElementById('pause-ellipsis').value = PAUSE_DEFAULTS.ellipsis;
+  document.getElementById('pause-chapter').value  = PAUSE_DEFAULTS.chapter;
+}
+
+// The slider only means anything once joining is on.
+function updateJoinControls() {
+  const on = document.getElementById('export-join-parts')?.checked;
+  const row = document.getElementById('export-part-count-row');
+  const slider = document.getElementById('export-part-count');
+  const hint = document.getElementById('export-part-count-hint');
+  if (row) row.style.display = on ? '' : 'none';
+  if (hint && slider) {
+    const n = parseInt(slider.value, 10) || 1;
+    hint.textContent = n === 1
+      ? 'One file for the whole book.'
+      : `${n} files of roughly equal length, chapters kept in order.`;
+  }
 }
 
 // ── Audio cache ───────────────────────────────────────────────────────────────

@@ -18,6 +18,7 @@ Subtitle formats:
 import io
 import os
 import re
+import subprocess
 import zipfile
 import logging
 import shutil
@@ -51,6 +52,12 @@ def book_export_dir(book_title: str, author: str | None = None) -> str:
 DEFAULT_SEGMENT_PAUSE_SEC = 0.35
 DIALOGUE_TURN_PAUSE_SEC = 0.55
 ELLIPSIS_PAUSE_SEC = 1.5
+# Silence inserted between two chapters when they are joined into one file.
+# Longer than any in-chapter pause so the chapter break stays audible.
+CHAPTER_BREAK_PAUSE_SEC = 2.0
+
+# Joined output: how many files a book may be split into.
+MAX_PART_COUNT = 4
 
 
 # ── Audio option resolution ───────────────────────────────────────────────────
@@ -79,6 +86,7 @@ def default_audio_options() -> dict:
         'pause_segment': DEFAULT_SEGMENT_PAUSE_SEC,
         'pause_dialogue': DIALOGUE_TURN_PAUSE_SEC,
         'pause_ellipsis': ELLIPSIS_PAUSE_SEC,
+        'pause_chapter': CHAPTER_BREAK_PAUSE_SEC,
     }
 
 
@@ -102,6 +110,7 @@ def audio_options(overrides: dict | None = None) -> dict:
         ('pause_segment', 'export_pause_segment'),
         ('pause_dialogue', 'export_pause_dialogue'),
         ('pause_ellipsis', 'export_pause_ellipsis'),
+        ('pause_chapter', 'export_pause_chapter'),
     ):
         if saved.get(saved_key) is not None:
             opts[key] = saved[saved_key]
@@ -121,6 +130,9 @@ def audio_options(overrides: dict | None = None) -> dict:
         ('pause_ellipsis', ELLIPSIS_PAUSE_SEC),
     ):
         opts[key] = _clamp_float(opts.get(key), fallback, 0.0, 5.0)
+    # A chapter break may legitimately be longer than an in-sentence pause.
+    opts['pause_chapter'] = _clamp_float(
+        opts.get('pause_chapter'), CHAPTER_BREAK_PAUSE_SEC, 0.0, 10.0)
     return opts
 
 
@@ -155,6 +167,36 @@ def estimated_mp3_kbps(opts: dict | None = None) -> int:
 
 def _ffmpeg_available() -> bool:
     return shutil.which('ffmpeg') is not None
+
+
+def _mp3_encoder_args(opts: dict) -> list[str]:
+    """ffmpeg arguments for the configured MP3 mode."""
+    if opts['mp3_mode'] == 'cbr':
+        return ['-c:a', 'libmp3lame', '-b:a', f"{opts['mp3_bitrate']}k"]
+    return ['-c:a', 'libmp3lame', '-q:a', str(opts['mp3_vbr_quality'])]
+
+
+def encode_wav_file(wav_path: str, out_path: str, opts: dict | None = None) -> bool:
+    """Encode a WAV file to MP3 on disk, streaming through ffmpeg.
+
+    Used for joined parts, which can be many hours long: unlike the pydub
+    path, this never holds the decoded audio in memory.
+    """
+    if not _ffmpeg_available():
+        return False
+    opts = opts or audio_options()
+    cmd = ['ffmpeg', '-y', '-loglevel', 'error', '-i', wav_path]
+    cmd += _mp3_encoder_args(opts)
+    cmd += [out_path]
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True)
+    except OSError as e:
+        log.warning(f'MP3 encoding failed to start: {e}')
+        return False
+    if result.returncode != 0:
+        log.warning(f'MP3 encoding failed: {result.stderr.strip()[:400]}')
+        return False
+    return True
 
 
 def _wav_to_mp3_bytes(wav_path: str, opts: dict | None = None) -> bytes | None:
@@ -342,6 +384,186 @@ def build_timeline(segments_db: list[dict], opts: dict | None = None) -> list[di
     return timeline
 
 
+# ── Chapter rendering ─────────────────────────────────────────────────────────
+
+def render_chapter_wav(
+    segments: list[dict],
+    output_dir: str,
+    file_stem: str,
+    opts: dict | None = None,
+) -> dict:
+    """Write one chapter's merged WAV and return it with its segment timeline.
+
+    Shared by the per-chapter export and the joined export, so both produce
+    bit-identical audio and identical subtitle timings.
+    """
+    os.makedirs(output_dir, exist_ok=True)
+    opts = audio_options(opts)
+    timeline = build_timeline(segments, opts)
+    merged = _merge_wavs(timeline, opts)
+    wav_path = os.path.join(output_dir, f'{_safe_name(file_stem)}.wav')
+    sf.write(wav_path, merged, SAMPLE_RATE)
+    return {
+        'wav_path': wav_path,
+        'timeline': timeline,
+        'duration_sec': len(merged) / SAMPLE_RATE,
+    }
+
+
+# ── Joining chapters into parts ───────────────────────────────────────────────
+
+def split_chapters_into_parts(
+    durations: list[float],
+    part_count: int,
+) -> list[list[int]]:
+    """Split chapters into ``part_count`` contiguous groups of similar length.
+
+    Chapters keep their reading order — only the cut points are chosen, so the
+    listener never gets a shuffled book. The cuts minimise the longest part,
+    which is what makes 2–4 files feel like equal halves/quarters rather than
+    one huge file plus scraps.
+    """
+    n = len(durations)
+    if n == 0:
+        return []
+    k = max(1, min(int(part_count or 1), MAX_PART_COUNT, n))
+    if k == 1:
+        return [list(range(n))]
+
+    # prefix[i] = total duration of the first i chapters
+    prefix = [0.0]
+    for d in durations:
+        prefix.append(prefix[-1] + max(0.0, float(d or 0.0)))
+
+    # best[j][i] = smallest achievable "longest part" when the first i chapters
+    # are split into j parts; cut[j][i] remembers where the last part started.
+    inf = float('inf')
+    best = [[inf] * (n + 1) for _ in range(k + 1)]
+    cut = [[0] * (n + 1) for _ in range(k + 1)]
+    best[0][0] = 0.0
+    for j in range(1, k + 1):
+        for i in range(j, n + 1):           # each part needs at least 1 chapter
+            for start in range(j - 1, i):
+                candidate = max(best[j - 1][start], prefix[i] - prefix[start])
+                if candidate < best[j][i]:
+                    best[j][i] = candidate
+                    cut[j][i] = start
+
+    bounds = [n]
+    for j in range(k, 0, -1):
+        bounds.append(cut[j][bounds[-1]])
+    bounds.reverse()
+    return [list(range(bounds[j], bounds[j + 1])) for j in range(k)]
+
+
+def part_file_stem(book_title: str, index: int, total: int) -> str:
+    """``Book`` for a single file, ``Book_part1`` … when split."""
+    safe = _safe_name(book_title)
+    return safe if total <= 1 else f'{safe}_part{index}'
+
+
+def concat_wavs(
+    wav_paths: list[str],
+    out_path: str,
+    gap_sec: float = CHAPTER_BREAK_PAUSE_SEC,
+) -> list[float]:
+    """Join WAVs into one file with a silent gap between them.
+
+    Streams block by block, so a many-hour part never has to fit in memory.
+    Returns each input's start offset in seconds, measured from the real sample
+    counts written — that is what keeps the subtitles in sync no matter how the
+    individual chapter lengths round.
+    """
+    gap_samples = int(SAMPLE_RATE * max(0.0, float(gap_sec)))
+    silence = np.zeros(gap_samples, dtype=np.float32)
+    offsets: list[float] = []
+    written = 0
+
+    with sf.SoundFile(out_path, 'w', samplerate=SAMPLE_RATE,
+                      channels=1, subtype='PCM_16') as out:
+        for idx, path in enumerate(wav_paths):
+            if idx and gap_samples:
+                out.write(silence)
+                written += gap_samples
+            offsets.append(written / SAMPLE_RATE)
+            with sf.SoundFile(path, 'r') as src:
+                for block in src.blocks(blocksize=SAMPLE_RATE * 30, dtype='float32'):
+                    if block.ndim > 1:
+                        block = block.mean(axis=1)
+                    out.write(block)
+                    written += len(block)
+    return offsets
+
+
+def shift_timeline(timeline: list[dict], offset_sec: float) -> list[dict]:
+    """Move a chapter's subtitle timings to their position inside a part."""
+    return [
+        {**seg,
+         't_start': seg['t_start'] + offset_sec,
+         't_end': seg['t_end'] + offset_sec}
+        for seg in timeline
+    ]
+
+
+def export_joined_part(
+    book_title: str,
+    part: list[dict],
+    character_colors: dict,
+    output_dir: str,
+    file_stem: str,
+    audio_fmt: str = 'mp3',
+    sub_fmt: str = 'ass',
+    opts: dict | None = None,
+) -> dict:
+    """Join already-rendered chapter WAVs into one audio file plus subtitles.
+
+    ``part`` is an ordered list of ``{'chapter_title', 'wav_path', 'timeline'}``
+    as returned by :func:`render_chapter_wav`. The chapter WAVs are joined
+    losslessly and encoded exactly once, so a joined MP3 is not a re-compressed
+    copy of the per-chapter MP3s.
+    """
+    opts = audio_options(opts)
+    os.makedirs(output_dir, exist_ok=True)
+    safe_stem = _safe_name(file_stem)
+    wav_path = os.path.join(output_dir, f'{safe_stem}.wav')
+
+    offsets = concat_wavs(
+        [ch['wav_path'] for ch in part], wav_path, opts['pause_chapter'])
+
+    combined: list[dict] = []
+    for offset, chapter in zip(offsets, part):
+        combined.extend(shift_timeline(chapter['timeline'], offset))
+
+    out_audio = wav_path
+    actual_fmt = 'wav'
+    if audio_fmt == 'mp3':
+        mp3_path = os.path.join(output_dir, f'{safe_stem}.mp3')
+        if encode_wav_file(wav_path, mp3_path, opts):
+            out_audio = mp3_path
+            actual_fmt = 'mp3'
+            os.remove(wav_path)
+
+    sub_content = (
+        build_ass(combined, character_colors, book_title)
+        if sub_fmt == 'ass'
+        else build_srt(combined)
+    )
+    sub_ext = 'ass' if sub_fmt == 'ass' else 'srt'
+    sub_path = os.path.join(output_dir, f'{safe_stem}.{sub_ext}')
+    with open(sub_path, 'w', encoding='utf-8') as f:
+        f.write(sub_content)
+
+    return {
+        'audio_path': out_audio,
+        'subtitle_path': sub_path,
+        'audio_fmt': actual_fmt,
+        'sub_fmt': sub_ext,
+        'chapter_count': len(part),
+        'duration_sec': (offsets[-1] + part[-1]['timeline'][-1]['t_end']
+                         if offsets and part[-1]['timeline'] else 0.0),
+    }
+
+
 # ── Public export functions ───────────────────────────────────────────────────
 
 def export_single_chapter(
@@ -358,16 +580,13 @@ def export_single_chapter(
 ) -> dict:
     """Returns {'audio_path': ..., 'subtitle_path': ..., 'audio_fmt': ..., 'sub_fmt': ...}"""
     output_dir = output_dir or book_export_dir(book_title, author)
-    os.makedirs(output_dir, exist_ok=True)
     safe_title = _safe_name(file_stem or chapter_title)
     # Idempotent: an already-resolved dict passed by the caller wins over the
     # saved settings, so a whole book export keeps one consistent set.
     opts = audio_options(opts)
-    timeline = build_timeline(segments, opts)
-    merged = _merge_wavs(timeline, opts)
-
-    wav_path = os.path.join(output_dir, f'{safe_title}.wav')
-    sf.write(wav_path, merged, SAMPLE_RATE)
+    rendered = render_chapter_wav(segments, output_dir, safe_title, opts)
+    timeline = rendered['timeline']
+    wav_path = rendered['wav_path']
 
     out_audio = wav_path
     actual_fmt = 'wav'

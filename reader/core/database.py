@@ -146,6 +146,15 @@ def init_db():
         }
         if "status" not in export_cols:
             conn.execute("ALTER TABLE export_prefs ADD COLUMN status TEXT")
+        # Join the chapters into 1-4 audio files instead of one file per chapter.
+        if "join_parts" not in export_cols:
+            conn.execute(
+                "ALTER TABLE export_prefs ADD COLUMN join_parts INTEGER DEFAULT 0"
+            )
+        if "part_count" not in export_cols:
+            conn.execute(
+                "ALTER TABLE export_prefs ADD COLUMN part_count INTEGER DEFAULT 1"
+            )
         # A crash or shutdown while exporting behaves like Pause: the export
         # can be continued from the cache after restart.
         conn.execute(

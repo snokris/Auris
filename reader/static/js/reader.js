@@ -1146,6 +1146,10 @@ function formatExportStatus(sr) {
   const total = typeof sr.total === 'number' ? sr.total : null;
   let msg = sr.message || 'Working…';
 
+  // Once synthesis is over, the server message tracks the join instead of the
+  // segment counters — rebuilding a progress line here would hide it.
+  if (sr.phase === 'joining') return msg;
+
   // Always rebuild a clear progress line so a stale server message cannot hide ETA.
   if (sr.state === 'running' && total != null && total > 0 && done != null) {
     msg = `Generating audio (${done}/${total})`;
@@ -1298,9 +1302,15 @@ async function monitorExportJob(jobId) {
         if (res.subtitle_download) setTimeout(() => window.open(res.subtitle_download), 500);
       }
       _exportBusy = false;
-      status.textContent = res.export_path
-        ? `Done. ${res.chapter_count} chapter(s) saved to ${res.export_path}`
-        : 'Done. Downloading…';
+      if (res.export_path && res.part_count) {
+        status.textContent =
+          `Done. ${res.chapter_count} chapter(s) joined into ` +
+          `${res.part_count} file(s) in ${res.export_path}`;
+      } else {
+        status.textContent = res.export_path
+          ? `Done. ${res.chapter_count} chapter(s) saved to ${res.export_path}`
+          : 'Done. Downloading…';
+      }
       setExportUi('idle');
       _refreshTocStatuses();
       initExportPanelState();
@@ -1347,6 +1357,14 @@ async function initExportPanelState() {
         document.getElementById('exp-chapters').value = st.prefs.chapters;
       }
     }
+    // Per-book prefs win; a book that was never exported starts from Settings.
+    const join = st.prefs && st.prefs.join_parts !== undefined
+      ? st.prefs : (st.join_defaults || {});
+    const joinBox = document.getElementById('exp-join');
+    const partsInput = document.getElementById('exp-parts');
+    if (joinBox) joinBox.checked = !!join.join_parts;
+    if (partsInput && join.part_count) partsInput.value = join.part_count;
+    _syncJoinControls();
     _setExportBookBar(st.ready || 0, st.total || 0);
 
     // Another book owns the single export slot → lock this panel.
@@ -1385,13 +1403,39 @@ async function initExportPanelState() {
 }
 initExportPanelState();
 
+// Joining is a whole-book operation, so it only applies to a multi-chapter
+// scope; the slider only matters once joining is on.
+function _syncJoinControls() {
+  const modeInput = document.querySelector('input[name="exp-mode"]:checked');
+  const mode = modeInput ? modeInput.value : 'chapter';
+  const section = document.getElementById('export-join-section');
+  const joinBox = document.getElementById('exp-join');
+  const wrap = document.getElementById('exp-parts-wrap');
+  const partsInput = document.getElementById('exp-parts');
+  const partsValue = document.getElementById('exp-parts-value');
+  if (!section || !joinBox || !wrap || !partsInput) return;
+  section.classList.toggle('hidden', mode !== 'chapterwise');
+  wrap.classList.toggle('hidden', !joinBox.checked);
+  if (partsValue) {
+    const n = Number(partsInput.value) || 1;
+    partsValue.textContent = n === 1 ? '1 (one file)' : `${n} files`;
+  }
+}
+
 document.querySelectorAll('input[name="exp-mode"]').forEach(input => {
   input.addEventListener('change', () => {
     const selected = document.querySelector('input[name="exp-mode"]:checked').value;
     document.getElementById('chapter-selection-wrap')
       .classList.toggle('hidden', selected !== 'chapterwise');
+    _syncJoinControls();
   });
 });
+
+['exp-join', 'exp-parts'].forEach(id => {
+  const el = document.getElementById(id);
+  if (el) el.addEventListener('input', _syncJoinControls);
+});
+_syncJoinControls();
 
 async function startExport() {
   if (!currentChapterId) { showToast('Open a chapter first.'); return; }
@@ -1422,6 +1466,10 @@ async function startExport() {
     else initExportPanelState();
   };
 
+  const joinBox = document.getElementById('exp-join');
+  const partsInput = document.getElementById('exp-parts');
+  const joinParts = mode === 'chapterwise' && !!(joinBox && joinBox.checked);
+
   const postExport = () => fetch(url, {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
@@ -1431,6 +1479,8 @@ async function startExport() {
       chapters: mode === 'chapterwise'
         ? document.getElementById('exp-chapters').value
         : null,
+      join_parts: joinParts,
+      part_count: joinParts ? (Number(partsInput && partsInput.value) || 1) : 1,
     }),
   });
 
