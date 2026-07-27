@@ -83,7 +83,9 @@ Kérhető 1–4 összefűzött MP3 is a hozzájuk illeszkedő, újraidőzített 
 
 ### Hangcache és Voice Studio
 
-A Beállítások hangcache-kártyája mutatja a cache méretét, kitakarítja az árva szegmenseket, és könyv törlésekor automatikusan söpör. A Voice Studióban a könyv referenciahangja (WAV + átirat) névvel elmenthető, és bármely könyvre egy kattintással alkalmazható. Az egynarrátoros mód külön kártyán kapcsolható: bekapcsolva a narrátor olvas mindent, a karakterdetektálás kikapcsol és a felismert szereplők törlődnek; kikapcsolva a detektálás automatikusan újrafut. Az akcentusválasztó „None (natural)” és „Hungarian” opcióval bővült — magyar felolvasáshoz az akcentusjelölés nélküli leírás ajánlott.
+A Beállítások hangcache-kártyája mutatja a cache méretét, kitakarítja az árva szegmenseket, és könyv törlésekor automatikusan söpör. A Voice Studióban a könyv referenciahangja (WAV + átirat) névvel elmenthető, és bármely könyvre egy kattintással alkalmazható. Az akcentusválasztó „None (natural)” és „Hungarian” opcióval bővült — magyar felolvasáshoz az akcentusjelölés nélküli leírás ajánlott.
+
+Az Auris Studio teljes egészében **egynarrátoros felolvasásra** van hangolva: egyetlen, minél élethűbb narrátorhang olvassa a teljes könyvet. A többszereplős narráció (karakterfelismerés, szereplőnkénti hangok) kódja megmaradt, de ki van kapcsolva — a kapcsoló az `app.py` `MULTI_VOICE_NARRATION` konstansa, a hozzá tartozó felületblokkok kikommentelve várakoznak (keresd: `MULTI_VOICE`).
 
 ## TTS-motorok
 
@@ -103,7 +105,6 @@ A Beállítások hangcache-kártyája mutatja a cache méretét, kitakarítja az
 - `Split coalesced audio` → Aligned (ajánlott)
 - `Alignment ASR model` → whisper-small (gyors) … whisper-large-v3-turbo (legpontosabb)
 - `MP3 mode` → VBR (a szegmensek közti csend így szinte semmibe nem kerül)
-- Magyar könyvekhez: egynarrátoros mód, vagy LLM-alapú karakterfelismerés lokális modellel (Ollama / LM Studio)
 
 ## Fejlesztés
 

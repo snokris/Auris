@@ -34,6 +34,22 @@ log = logging.getLogger(__name__)
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024  # 500 MB
 
+# ── Multi-voice narration: DISABLED ──────────────────────────────────────────
+#
+# Auris Studio is built for one lifelike Hungarian narrator voice. The
+# multi-character machinery (character detection, per-character voices,
+# dialogue-speaker attribution) is kept in the codebase but the app never
+# takes those code paths while this flag is False:
+#   * every book behaves as single-narrator (see _book_single_narrator_mode)
+#   * import never starts character analysis (no LLM / spaCy run)
+#   * the single-narrator toggle cannot be switched off via the API
+#   * the related UI blocks are commented out in voice_studio.html,
+#     settings.html, docs.html, settings.js, voice_studio.js and library.js
+#     (search for "MULTI_VOICE" in those files)
+# To bring multi-voice back: set this to True and restore the commented-out
+# UI blocks.
+MULTI_VOICE_NARRATION = False
+
 UPLOAD_DIR = os.path.join(os.path.dirname(__file__), 'uploads')
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
@@ -149,6 +165,10 @@ def _book_narrator_instruct(book: dict | None) -> str:
 
 
 def _book_single_narrator_mode(book: dict | None) -> bool:
+    if not MULTI_VOICE_NARRATION:
+        # Multi-voice narration is disabled: every book reads with the single
+        # narrator voice regardless of what is stored in the database.
+        return True
     if not book:
         return False
     return bool(book.get('single_narrator_mode'))
@@ -387,7 +407,10 @@ def import_book():
     detection_mode = str(
         detection_config.get('character_detection_mode', 'legacy') or 'legacy'
     ).lower()
-    single_narrator_default = bool(app_settings.get('single_narrator_mode', False))
+    single_narrator_default = (
+        bool(app_settings.get('single_narrator_mode', False))
+        or not MULTI_VOICE_NARRATION
+    )
     if single_narrator_default:
         # One narrator reads everything: character detection is skipped.
         analysis_status = 'complete'
@@ -402,7 +425,7 @@ def import_book():
             'VALUES (?,?,?,?,?,?,?,?,?,?,?)',
             (data['title'], data['author'], dest, ext,
              data.get('cover_b64'), data.get('language', 'en'),
-             int(bool(app_settings.get('single_narrator_mode', False))), len(chapters),
+             int(single_narrator_default), len(chapters),
              analysis_status, detection_mode,
              detection_config.get('llm_model', '') if detection_mode == 'llm' else 'spaCy/regex')
         )
@@ -937,6 +960,8 @@ def update_narrator(book_id):
         single_narrator_mode = raw_mode.strip().lower() in {'1', 'true', 'yes', 'on'}
     else:
         single_narrator_mode = bool(raw_mode)
+    if not MULTI_VOICE_NARRATION:
+        single_narrator_mode = True
     narrator_changed = instruct != _book_narrator_instruct(book_data)
     mode_changed = single_narrator_mode != _book_single_narrator_mode(book_data)
     raw_ref_text = body.get('ref_text', book_data.get('narrator_ref_text') or '')
@@ -981,6 +1006,10 @@ def set_single_narrator(book_id):
     """
     body = request.get_json(force=True) or {}
     enabled = bool(body.get('enabled'))
+    if not enabled and not MULTI_VOICE_NARRATION:
+        return jsonify({
+            'error': 'Multi-voice narration is disabled in this build.'
+        }), 400
 
     with get_conn() as conn:
         book = conn.execute(

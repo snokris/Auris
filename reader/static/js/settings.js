@@ -58,20 +58,23 @@ async function loadSettings() {
   toggleHiggsSource(higgsSrc);
   toggleHiggsPromptMode(_settings.higgs_prompt_mode || 'raw');
 
-  // Character / dialogue-speaker detection
-  const detectionMode = _settings.character_detection_mode || 'legacy';
-  document.getElementById('character-detection-mode').value = detectionMode;
-  document.getElementById('llm-base-url').value =
-    _settings.llm_base_url || 'http://127.0.0.1:1234/v1';
-  document.getElementById('llm-model').value = _settings.llm_model || '';
-  document.getElementById('llm-api-key').value = _settings.llm_api_key || '';
-  document.getElementById('llm-timeout-sec').value = _settings.llm_timeout_sec ?? 600;
-  document.getElementById('llm-max-characters').value = _settings.llm_max_characters ?? 60;
-  toggleCharacterDetection(detectionMode);
+  // MULTI_VOICE: a többszereplős narráció ki van kapcsolva (app.py:
+  // MULTI_VOICE_NARRATION = False) — a karakterfelismerés beállításai ki
+  // vannak kommentelve a settings.html-ből, ezért itt sem töltjük őket.
+  // const detectionMode = _settings.character_detection_mode || 'legacy';
+  // document.getElementById('character-detection-mode').value = detectionMode;
+  // document.getElementById('llm-base-url').value =
+  //   _settings.llm_base_url || 'http://127.0.0.1:1234/v1';
+  // document.getElementById('llm-model').value = _settings.llm_model || '';
+  // document.getElementById('llm-api-key').value = _settings.llm_api_key || '';
+  // document.getElementById('llm-timeout-sec').value = _settings.llm_timeout_sec ?? 600;
+  // document.getElementById('llm-max-characters').value = _settings.llm_max_characters ?? 60;
+  // toggleCharacterDetection(detectionMode);
 
   // Narrator
   document.getElementById('narrator-instruct').value = _settings.narrator_instruct || '';
-  document.getElementById('default-single-narrator-mode').checked = Boolean(_settings.single_narrator_mode);
+  // MULTI_VOICE: minden könyv egynarrátoros, a kapcsoló ki van kommentelve.
+  // document.getElementById('default-single-narrator-mode').checked = Boolean(_settings.single_narrator_mode);
 
   // TTS text processing (default true when unset)
   document.getElementById('normalize-text').checked = _settings.normalize_text !== false;
@@ -187,7 +190,8 @@ async function loadSettings() {
   document.getElementById('line-height').value = lh;
   document.getElementById('line-height-val').textContent = parseFloat(lh).toFixed(1);
 
-  checkSpacy();
+  // MULTI_VOICE: a spaCy csak a (kikapcsolt) karakterfelismeréshez kell.
+  // checkSpacy();
   checkExistingDownload();
   _settingsReady = true;
   setSettingsDirty(false);
@@ -508,14 +512,16 @@ async function saveSettings() {
     higgs_default_emotion: document.getElementById('higgs-default-emotion').value,
     higgs_default_style: document.getElementById('higgs-default-style').value,
     higgs_default_expressive: document.getElementById('higgs-default-expressive').value,
-    character_detection_mode: document.getElementById('character-detection-mode').value,
-    llm_base_url:      document.getElementById('llm-base-url').value.trim(),
-    llm_model:         document.getElementById('llm-model').value.trim(),
-    llm_api_key:       document.getElementById('llm-api-key').value,
-    llm_timeout_sec:   parseInt(document.getElementById('llm-timeout-sec').value, 10) || 600,
-    llm_max_characters: parseInt(document.getElementById('llm-max-characters').value, 10) || 60,
+    // MULTI_VOICE: a karakterfelismerési kulcsokat nem küldjük — a mentett
+    // értékek érintetlenül megmaradnak a settings.json-ban.
+    // character_detection_mode: document.getElementById('character-detection-mode').value,
+    // llm_base_url:      document.getElementById('llm-base-url').value.trim(),
+    // llm_model:         document.getElementById('llm-model').value.trim(),
+    // llm_api_key:       document.getElementById('llm-api-key').value,
+    // llm_timeout_sec:   parseInt(document.getElementById('llm-timeout-sec').value, 10) || 600,
+    // llm_max_characters: parseInt(document.getElementById('llm-max-characters').value, 10) || 60,
     narrator_instruct: document.getElementById('narrator-instruct').value.trim(),
-    single_narrator_mode: document.getElementById('default-single-narrator-mode').checked,
+    // single_narrator_mode: document.getElementById('default-single-narrator-mode').checked,
     normalize_text:    document.getElementById('normalize-text').checked,
     tts_num_step:      parseInt(document.getElementById('tts-num-step').value, 10) || 16,
     tts_batch_size:    parseInt(document.getElementById('tts-batch-size').value, 10) || 0,

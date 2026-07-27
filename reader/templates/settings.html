@@ -181,7 +181,11 @@
     </div>
   </section>
 
-  <!-- Character detection -->
+  {# MULTI_VOICE: a többszereplős narráció ki van kapcsolva (app.py:
+     MULTI_VOICE_NARRATION = False) — a karakterfelismerés beállításai ezért
+     nem jelennek meg. Visszakapcsoláskor vedd ki ezt a kommentet, és a
+     settings.js-ben állítsd vissza a hozzá tartozó sorokat (keresd:
+     MULTI_VOICE).
   <section class="settings-section">
     <div class="settings-section-title">Character &amp; Dialogue Speaker Detection</div>
     <p class="section-desc">
@@ -251,6 +255,7 @@
       </div>
     </div>
   </section>
+  #}
 
   <!-- Narrator Voice -->
   <section class="settings-section">
@@ -264,6 +269,7 @@
         speaker identity and maps whisper / pitch attributes to control tokens.
       </span>
     </div>
+    {# MULTI_VOICE: minden könyv egynarrátoros, a kapcsolónak nincs szerepe.
     <div class="setting-row">
       <label class="narrator-mode-row">
         <input type="checkbox" id="default-single-narrator-mode">
@@ -271,6 +277,7 @@
       </label>
       <span class="muted" style="font-size:.78rem">Existing books can still be changed per book in Voice Studio.</span>
     </div>
+    #}
   </section>
 
   <!-- TTS text processing -->
@@ -415,7 +422,7 @@
     <div class="setting-row">
       <label>Subtitle format</label>
       <select id="subtitle-format" class="select-input">
-        <option value="ass">ASS — styled, per-character colours</option>
+        <option value="ass">ASS — styled subtitles</option>
         <option value="srt">SRT — plain, universally supported</option>
       </select>
     </div>

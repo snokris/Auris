@@ -26,16 +26,20 @@ async function loadBooks() {
     const progressMeta = hasProgress
       ? `<div class="book-progress-hint">Continue from ${esc(b.progress_chapter_title || 'saved position')} &middot; seg ${progressPosition + 1}</div>`
       : '';
-    const analysisState = b.character_analysis_status || '';
-    const analysisMeta = ['queued', 'running'].includes(analysisState)
-      ? `<div class="book-progress-hint status-warn">${esc(b.character_analysis_message || 'Analyzing characters…')}</div>`
-      : analysisState === 'failed'
-        ? `<div class="book-progress-hint status-error">Character analysis failed: ${esc(b.character_analysis_message)}</div>`
-        : analysisState === 'complete'
-          ? `<div class="book-progress-hint status-ok">${esc(b.character_analysis_message || 'Character analysis complete.')}</div>`
-          : analysisState === 'partial'
-            ? `<div class="book-progress-hint status-warn">${esc(b.character_analysis_message || 'Character analysis partially complete.')}</div>`
-          : '';
+    // MULTI_VOICE: a többszereplős narráció ki van kapcsolva (app.py:
+    // MULTI_VOICE_NARRATION = False), karakterelemzés nem fut, ezért a
+    // hozzá tartozó állapotjelzés sem jelenik meg a könyvkártyán.
+    const analysisMeta = '';
+    // const analysisState = b.character_analysis_status || '';
+    // const analysisMeta = ['queued', 'running'].includes(analysisState)
+    //   ? `<div class="book-progress-hint status-warn">${esc(b.character_analysis_message || 'Analyzing characters…')}</div>`
+    //   : analysisState === 'failed'
+    //     ? `<div class="book-progress-hint status-error">Character analysis failed: ${esc(b.character_analysis_message)}</div>`
+    //     : analysisState === 'complete'
+    //       ? `<div class="book-progress-hint status-ok">${esc(b.character_analysis_message || 'Character analysis complete.')}</div>`
+    //       : analysisState === 'partial'
+    //         ? `<div class="book-progress-hint status-warn">${esc(b.character_analysis_message || 'Character analysis partially complete.')}</div>`
+    //       : '';
 
     const exportBadge = b.export_status === 'running'
       ? `<span class="book-export-badge running" title="Export in progress for this book">● Exporting</span>`
@@ -85,9 +89,10 @@ document.getElementById('file-input').addEventListener('change', async function(
     const r = await fetch('/api/books/import', { method: 'POST', body: fd });
     const d = await r.json();
     if (d.error) throw new Error(d.error);
-    status.textContent = `“${d.title}” imported — ${d.chapters} sections. Analyzing characters and dialogue speakers…`;
+    status.textContent = `“${d.title}” imported — ${d.chapters} sections.`;
     loadBooks();
-    pollCharacterAnalysis(d.book_id, status);
+    // MULTI_VOICE: karakterelemzés nem indul importkor, nincs mit pollozni.
+    // pollCharacterAnalysis(d.book_id, status);
   } catch(e) {
     status.textContent = e.message;
     status.className = 'import-status error';
