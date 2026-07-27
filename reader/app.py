@@ -3,6 +3,7 @@ Offline Ebook Reader — Flask application.
 """
 
 import base64
+import io
 import logging
 import os
 import shutil
@@ -23,6 +24,7 @@ from core.tts_router import TTSEngineRouter
 from core import characters as char_module
 from core import llm_characters
 from core import enrichment, exporter, structure, settings as app_settings
+from core import voice_preset_file
 from core.parser import epub_parser, pdf_parser, txt_parser
 
 logging.basicConfig(level=logging.INFO,
@@ -1299,6 +1301,102 @@ def apply_voice_preset(book_id):
         'preset': preset['name'],
         'ref_audio_name': display_name,
         'ref_text': preset['ref_text'] or '',
+    })
+
+
+def _unique_preset_name(conn, name: str) -> str:
+    """Return ``name``, or ``name (2)``, ``name (3)``… if it is already taken."""
+    taken = {
+        row['name'].casefold()
+        for row in conn.execute('SELECT name FROM voice_presets').fetchall()
+    }
+    if name.casefold() not in taken:
+        return name
+    for suffix in range(2, 1000):
+        tail = f' ({suffix})'
+        base = name[:80 - len(tail)].rstrip()
+        candidate = f'{base}{tail}'
+        if candidate.casefold() not in taken:
+            return candidate
+    return f'{name[:70].rstrip()} {uuid.uuid4().hex[:8]}'
+
+
+@app.route('/api/voice-presets/<int:preset_id>/export')
+def export_voice_preset(preset_id):
+    """Download one preset as a single .aurisvoice file (WAV + transcript)."""
+    with get_conn() as conn:
+        row = conn.execute(
+            'SELECT name, ref_audio_path, ref_audio_name, ref_text, created_at '
+            'FROM voice_presets WHERE id=?',
+            (preset_id,),
+        ).fetchone()
+    if not row:
+        return jsonify({'error': 'Not found'}), 404
+    try:
+        blob = voice_preset_file.build_archive_from_path(
+            row['name'],
+            row['ref_audio_path'],
+            ref_text=row['ref_text'],
+            source_filename=row['ref_audio_name'],
+            created_at=row['created_at'],
+        )
+    except voice_preset_file.VoicePresetFileError as exc:
+        return jsonify({'error': str(exc)}), 410
+    return send_file(
+        io.BytesIO(blob),
+        mimetype='application/octet-stream',
+        as_attachment=True,
+        download_name=voice_preset_file.safe_download_name(row['name']),
+    )
+
+
+@app.route('/api/voice-presets/import', methods=['POST'])
+def import_voice_preset():
+    """Create a preset from an uploaded .aurisvoice file."""
+    if 'file' not in request.files:
+        return jsonify({'error': 'No file'}), 400
+    upload = request.files['file']
+    filename = upload.filename or ''
+    if not filename.lower().endswith(voice_preset_file.EXTENSION):
+        return jsonify({
+            'error': f'A voice preset must be a {voice_preset_file.EXTENSION} file.'
+        }), 400
+
+    try:
+        payload = voice_preset_file.read_archive_from_stream(upload.stream)
+    except voice_preset_file.VoicePresetFileError as exc:
+        return jsonify({'error': str(exc)}), 400
+
+    requested = str(request.form.get('name') or '').strip()
+    name = requested or payload.name
+    if not name:
+        name = os.path.basename(filename)[:-len(voice_preset_file.EXTENSION)].strip()
+    if not name:
+        return jsonify({'error': 'The file does not carry a preset name.'}), 400
+    name = name[:80]
+
+    dest = os.path.join(VOICE_PRESET_DIR, f'{uuid.uuid4().hex}.wav')
+    with open(dest, 'wb') as fh:
+        fh.write(payload.audio_bytes)
+    try:
+        with get_conn() as conn:
+            final_name = _unique_preset_name(conn, name)
+            cur = conn.execute(
+                'INSERT INTO voice_presets (name, ref_audio_path, ref_audio_name, ref_text) '
+                'VALUES (?, ?, ?, ?)',
+                (final_name, dest, payload.source_filename, payload.ref_text or None),
+            )
+            preset_id = cur.lastrowid
+    except sqlite3.IntegrityError:
+        _delete_file_if_exists(dest)
+        return jsonify({'error': f'A preset named "{name}" already exists.'}), 409
+    return jsonify({
+        'ok': True,
+        'id': preset_id,
+        'name': final_name,
+        'renamed': final_name != name,
+        'has_text': bool(payload.ref_text),
+        'duration_sec': payload.duration_sec,
     })
 
 

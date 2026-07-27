@@ -456,7 +456,9 @@ async function loadVoicePresets() {
 
 function setVoicePresetButtonsEnabled(enabled) {
   document
-    .querySelectorAll('button[onclick="applyVoicePreset()"], button[onclick="deleteVoicePreset()"]')
+    .querySelectorAll(
+      'button[onclick="applyVoicePreset()"], button[onclick="deleteVoicePreset()"], button[onclick="exportVoicePreset()"]'
+    )
     .forEach((btn) => {
       btn.disabled = !enabled;
     });
@@ -535,6 +537,46 @@ async function deleteVoicePreset() {
   }
 }
 
+function exportVoicePreset() {
+  const select = document.getElementById("voice-preset-select");
+  const presetId = Number(select?.value || 0);
+  if (!presetId) {
+    alert("No saved voice is selected.");
+    return;
+  }
+  // A plain navigation keeps the browser's own download UI and filename.
+  window.location.href = `/api/voice-presets/${presetId}/export`;
+}
+
+async function importVoicePreset(event) {
+  const input = event.target;
+  const file = input.files?.[0];
+  if (!file) return;
+  const form = new FormData();
+  form.append("file", file);
+  let d;
+  try {
+    const r = await fetch("/api/voice-presets/import", { method: "POST", body: form });
+    d = await r.json();
+  } catch (error) {
+    alert("Could not import the voice file.");
+    input.value = "";
+    return;
+  }
+  input.value = "";
+  if (d.ok) {
+    await loadVoicePresets();
+    const select = document.getElementById("voice-preset-select");
+    if (select) select.value = String(d.id);
+    flashSaved(document.getElementById("voice-preset-note"));
+    if (d.renamed) {
+      alert(`A voice with that name already existed, so it was imported as "${d.name}".`);
+    }
+  } else if (d.error) {
+    alert(`Could not import the voice: ${d.error}`);
+  }
+}
+
 document.querySelector('.preview-btn[data-char-id="narrator"]').onclick = previewNarrator;
 
 initNarratorControls();
@@ -553,3 +595,5 @@ window.loadNarratorRefText = loadNarratorRefText;
 window.saveVoicePreset = saveVoicePreset;
 window.applyVoicePreset = applyVoicePreset;
 window.deleteVoicePreset = deleteVoicePreset;
+window.exportVoicePreset = exportVoicePreset;
+window.importVoicePreset = importVoicePreset;
