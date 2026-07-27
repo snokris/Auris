@@ -107,7 +107,8 @@ def init_db():
             is_dialogue   INTEGER DEFAULT 0,
             audio_path    TEXT,
             duration_sec  REAL,
-            cache_key     TEXT UNIQUE
+            cache_key     TEXT UNIQUE,
+            ends_paragraph INTEGER DEFAULT 0
         );
 
         CREATE TABLE IF NOT EXISTS voice_presets (
@@ -235,9 +236,17 @@ def init_db():
                     is_dialogue   INTEGER DEFAULT 0,
                     audio_path    TEXT,
                     duration_sec  REAL,
-                    cache_key     TEXT
+                    cache_key     TEXT,
+                    ends_paragraph INTEGER DEFAULT 0
                 );
-                INSERT INTO tts_segments_new SELECT * FROM tts_segments;
+                INSERT INTO tts_segments_new
+                    (id, book_id, chapter_id, segment_index, text, enriched_text,
+                     character_name, instruct, speed, is_dialogue, audio_path,
+                     duration_sec, cache_key)
+                SELECT id, book_id, chapter_id, segment_index, text, enriched_text,
+                       character_name, instruct, speed, is_dialogue, audio_path,
+                       duration_sec, cache_key
+                FROM tts_segments;
                 DROP TABLE tts_segments;
                 ALTER TABLE tts_segments_new RENAME TO tts_segments;
                 PRAGMA foreign_keys=ON;
@@ -248,3 +257,14 @@ def init_db():
         )
     finally:
         _mc.close()
+
+    with get_conn() as conn:
+        segment_cols = {
+            row["name"]
+            for row in conn.execute("PRAGMA table_info(tts_segments)").fetchall()
+        }
+        if "ends_paragraph" not in segment_cols:
+            conn.execute(
+                "ALTER TABLE tts_segments "
+                "ADD COLUMN ends_paragraph INTEGER DEFAULT 0"
+            )

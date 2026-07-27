@@ -79,7 +79,7 @@ exports/Dan_Brown_-_A_titkok_titka/
   Dan_Brown_-_A_titkok_titka_01_PROLÓGUS.srt
 ```
 
-Kérhető 1–4 összefűzött MP3 is a hozzájuk illeszkedő, újraidőzített felirattal. Az MP3-kódolás (VBR minőség vagy fix bitráta) és a beszédszünetek — mondatok, párbeszédfordulók, kihagyások és fejezetek között — a Settingsben állíthatók.
+Kérhető 1–4 összefűzött MP3 is a hozzájuk illeszkedő, újraidőzített felirattal. Az MP3-kódolás (VBR minőség vagy fix bitráta) és a beszédszünetek — mondatok, párbeszédfordulók, kihagyások, bekezdésvégek és fejezetek között — a Settingsben állíthatók. Az MP3-okba ID3-címkék kerülnek (szerző, könyvcím, fejezetcím, sorszám), és bekapcsolható a stúdiómasztering: finom EQ + kompresszor és kétmenetes EBU R128 hangosságillesztés (−19 LUFS) fejezetenként.
 
 ### Hangcache és Voice Studio
 

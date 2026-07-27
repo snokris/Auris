@@ -759,7 +759,10 @@
             <li>Export közben a motorváltás, az újratöltés és a hangelőnézetek le vannak tiltva.</li>
             <li>Végül 1–4 összefűzött MP3 és a hozzájuk illeszkedő SRT is készíthető.</li>
             <li>A fájlnevek tartalmazzák a szerzőt, a kimenet pedig lapos <code>exports/Szerző_-_Cím/</code> mappába kerül.</li>
-            <li>Az MP3-bitráta és a beszédszünetek a Beállításokban állíthatók.</li>
+            <li>Az MP3-bitráta és a beszédszünetek a Beállításokban állíthatók; a bekezdésvégek külön, hosszabb szünetet kapnak (alap 0,85 mp).</li>
+            <li>Az MP3-fájlok ID3-címkéket kapnak: fejezetcím, szerző, könyvcím és sorszám.</li>
+            <li>Opcionális stúdiómasztering: finom EQ + kompresszor és kétmenetes EBU R128 hangosságillesztés (−19 LUFS) fejezetenként; ha az ffmpeg-lépés hibázik, a nyers hang kerül a fájlba.</li>
+            <li>Importtisztítás: a BOM, zero-width és vezérlőkarakterek eltűnnek a szövegből; az 500 karakternél hosszabb egységek tagmondathatáron feldarabolódnak.</li>
           </ul>
         </div>
         <div>

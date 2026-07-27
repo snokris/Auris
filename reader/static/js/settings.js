@@ -154,8 +154,12 @@ async function loadSettings() {
     _settings.export_pause_dialogue ?? PAUSE_DEFAULTS.dialogue;
   document.getElementById('pause-ellipsis').value =
     _settings.export_pause_ellipsis ?? PAUSE_DEFAULTS.ellipsis;
+  document.getElementById('pause-paragraph').value =
+    _settings.export_pause_paragraph ?? PAUSE_DEFAULTS.paragraph;
   document.getElementById('pause-chapter').value =
     _settings.export_pause_chapter ?? PAUSE_DEFAULTS.chapter;
+  const masteringBox = document.getElementById('audio-mastering');
+  if (masteringBox) masteringBox.checked = !!_settings.audio_mastering;
   const joinBox = document.getElementById('export-join-parts');
   if (joinBox) joinBox.checked = !!_settings.export_join_parts;
   const partCount = document.getElementById('export-part-count');
@@ -531,7 +535,9 @@ async function saveSettings() {
     export_pause_segment:  _pauseValue('pause-segment', PAUSE_DEFAULTS.segment),
     export_pause_dialogue: _pauseValue('pause-dialogue', PAUSE_DEFAULTS.dialogue),
     export_pause_ellipsis: _pauseValue('pause-ellipsis', PAUSE_DEFAULTS.ellipsis),
+    export_pause_paragraph: _pauseValue('pause-paragraph', PAUSE_DEFAULTS.paragraph),
     export_pause_chapter:  _pauseValue('pause-chapter', PAUSE_DEFAULTS.chapter, 10),
+    audio_mastering:    document.getElementById('audio-mastering')?.checked || false,
     export_join_parts:  document.getElementById('export-join-parts')?.checked || false,
     export_part_count:  parseInt(
       document.getElementById('export-part-count')?.value || '1', 10
@@ -569,7 +575,7 @@ async function saveSettings() {
 // is only the fallback when the settings request has not landed yet.
 let _kbpsByVbrQuality = {0:96, 1:88, 2:80, 3:70, 4:62, 5:55, 6:50, 7:44, 8:43, 9:34};
 
-const PAUSE_DEFAULTS = { segment: 0.35, dialogue: 0.55, ellipsis: 1.5, chapter: 2.0 };
+const PAUSE_DEFAULTS = { segment: 0.35, dialogue: 0.55, ellipsis: 1.5, paragraph: 0.85, chapter: 2.0 };
 
 function currentMp3Kbps() {
   const mode = document.getElementById('mp3-mode')?.value || 'vbr';
@@ -636,6 +642,7 @@ function resetPauses() {
   document.getElementById('pause-segment').value  = PAUSE_DEFAULTS.segment;
   document.getElementById('pause-dialogue').value = PAUSE_DEFAULTS.dialogue;
   document.getElementById('pause-ellipsis').value = PAUSE_DEFAULTS.ellipsis;
+  document.getElementById('pause-paragraph').value = PAUSE_DEFAULTS.paragraph;
   document.getElementById('pause-chapter').value  = PAUSE_DEFAULTS.chapter;
 }
 
