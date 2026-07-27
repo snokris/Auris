@@ -317,6 +317,7 @@
             <tr><td><strong>Voice instruct</strong></td><td>Nem, kor, hangmagasság és akcentus alapján hangot tervez. Az akcentuslistában „None (natural)” és „Hungarian” opció is választható; magyar felolvasáshoz a None ajánlott.</td><td>A hangazonosságot főként a referencia adja; Expressive módban pitch/whisper tokenné alakul.</td></tr>
             <tr><td><strong>Automatikus hang</strong></td><td>Referencia és instruct nélkül támogatott.</td><td>Referencia nélkül a modell saját hangkondicionálásával generál.</td></tr>
             <tr><td><strong>Mentett hangok (Saved voices)</strong></td><td colspan="2">A narrátor aktuális referenciahangja (WAV + átirat) névvel elmenthető, és bármely könyvre egy kattintással alkalmazható. A preset törlése nem érinti az azt már használó könyveket.</td></tr>
+            <tr><td><strong>Hangfájl exportja és importja</strong></td><td colspan="2">A kiválasztott mentett hang egyetlen <code>.aurisvoice</code> fájlba csomagolható (a referencia-WAV és a hozzá tartozó átirat együtt), és onnan vissza is tölthető — így menthető, illetve átvihető másik gépre. Ha a név már foglalt, az import „Név (2)” alakban veszi fel. A fájl a klónozott hang teljes forrását tartalmazza, ezért csak akkor add tovább, ha a hang felhasználására jogosult vagy.</td></tr>
             <tr><td><strong>Single narrator</strong></td><td colspan="2">A Voice Studio tetején lévő kártyán kapcsolható. Bekapcsolva a narrátor olvas minden sort, a karakterdetektálás kikapcsol, a már felismert szereplők pedig törlődnek a könyvből; kikapcsolásakor a detektálás automatikusan újrafut.</td></tr>
           </tbody>
         </table>
@@ -765,7 +766,7 @@
           <h3>Hangcache és Voice Studio</h3>
           <ul class="docs-check-list">
             <li>Hangcache-kártya a Beállításokban: statisztika, árva szegmensek takarítása, automatikus söprés könyv törlésekor.</li>
-            <li>Mentett narrátorhang-presetek a Voice Studióban.</li>
+            <li>Mentett narrátorhang-presetek a Voice Studióban, egyfájlos <code>.aurisvoice</code> exporttal és importtal.</li>
             <li>Egynarrátoros mód külön kártyán, amely letiltja és elfelejti a szereplőhangokat.</li>
           </ul>
         </div>

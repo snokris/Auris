@@ -44,7 +44,7 @@ Első használatkor a Settings oldalon töltsd le az OmniVoice-modellt (~3 GB), 
 
 1. **Library** — EPUB/PDF/TXT importálása; a magyar nyelvet és a fejezethatárokat magától felismeri, a felismert fejezetek pedig import után szerkeszthetők.
 2. **Reader** — lejátszás bármely mondattól; a fejezet hangja előre is legenerálható.
-3. **Voice Studio** — narrátorhang beállítása leírással vagy klónozás referencia-WAV-ból (3–10 másodperces, tiszta, egybeszélős felvétel + pontos átirat); hangpresetek mentése és alkalmazása.
+3. **Voice Studio** — narrátorhang beállítása leírással vagy klónozás referencia-WAV-ból (3–10 másodperces, tiszta, egybeszélős felvétel + pontos átirat); hangpresetek mentése, alkalmazása, valamint exportja és importja egyetlen `.aurisvoice` fájlként.
 4. **Export** — a felső sávból nyíló panelen (`E` billentyű) fejezetek MP3-ba felirattal, `all`, `2-6` vagy `1,3,7-10` formában.
 
 ## Miben más az Auris Studio?

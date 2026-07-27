@@ -53,3 +53,6 @@ reader/data/llm_eval_*
 
 # Saját hangpresetek referencia-WAV-jai
 reader/data/voice_presets/
+
+# Exportált hangpreset-fájlok (referenciahangot tartalmaznak)
+*.aurisvoice
