@@ -606,6 +606,15 @@
             <li><strong>MP3:</strong> ffmpeg szükséges a PATH környezeti változóban.</li>
             <li><strong>ASS:</strong> színezett/stílusozott felirat.</li>
             <li><strong>SRT:</strong> egyszerű, széles körben kompatibilis felirat.</li>
+            <li><strong>ID3-címkék:</strong> minden MP3 tartalmazza a fejezetcímet, a szerzőt, a könyvcímet (album) és a sorszámot (track).</li>
+          </ul>
+        </div>
+        <div>
+          <h3>Szünetek és hangzás</h3>
+          <ul class="docs-check-list">
+            <li>A beszédszünetek a Settingsben állíthatók: mondatok között (0,35 mp), párbeszédfordulóknál (0,55 mp), kihagyás után (1,5 mp), bekezdésvégeken (0,85 mp) és fejezethatáron (2,0 mp).</li>
+            <li>A bekezdésvégi hosszabb levegővétel az importált szöveg valódi bekezdéshatárait követi — a lejátszás, az export és a felirat ugyanazokat az értékeket használja.</li>
+            <li><strong>Studio mastering</strong> (opcionális, alapból kikapcsolva): finom EQ + kompresszor és kétmenetes EBU R128 hangosságillesztés (−19 LUFS) fejezetenként. Ha az ffmpeg-lépés hibázik, a nyers hang kerül a fájlba, az export attól még sikerül.</li>
           </ul>
         </div>
         <div>
@@ -725,7 +734,7 @@
         <span class="docs-section-index">10</span>
         <div>
           <h2>Az Auris Studio újdonságai (snokris/Auris-Studio)</h2>
-          <p>Ez a változat az eredeti Aurist Apple Silicon támogatással, hangminőség-javításokkal, magyar nyelvi finomításokkal és egy végigvitt exportfolyamattal bővíti.</p>
+          <p>Ez a változat az eredeti Aurist Apple Silicon támogatással, hangminőség-javításokkal, magyar nyelvi finomításokkal és egy végigvitt exportfolyamattal bővíti — mindezt egyetlen, minél élethűbb narrátorhangra hangolva.</p>
         </div>
       </div>
       <div class="docs-two-column">
@@ -771,10 +780,17 @@
             <li>Export közben a motorváltás, az újratöltés és a hangelőnézetek le vannak tiltva.</li>
             <li>Végül 1–4 összefűzött MP3 és a hozzájuk illeszkedő SRT is készíthető.</li>
             <li>A fájlnevek tartalmazzák a szerzőt, a kimenet pedig lapos <code>exports/Szerző_-_Cím/</code> mappába kerül.</li>
-            <li>Az MP3-bitráta és a beszédszünetek a Beállításokban állíthatók; a bekezdésvégek külön, hosszabb szünetet kapnak (alap 0,85 mp).</li>
+            <li>Az MP3-kódolás (VBR/CBR) és a beszédszünetek a Beállításokban állíthatók.</li>
             <li>Az MP3-fájlok ID3-címkéket kapnak: fejezetcím, szerző, könyvcím és sorszám.</li>
-            <li>Opcionális stúdiómasztering: finom EQ + kompresszor és kétmenetes EBU R128 hangosságillesztés (−19 LUFS) fejezetenként; ha az ffmpeg-lépés hibázik, a nyers hang kerül a fájlba.</li>
-            <li>Importtisztítás: a BOM, zero-width és vezérlőkarakterek eltűnnek a szövegből; az 500 karakternél hosszabb egységek tagmondathatáron feldarabolódnak.</li>
+          </ul>
+        </div>
+        <div>
+          <h3>Természetes, emberi hangzás</h3>
+          <ul class="docs-check-list">
+            <li>Bekezdésvégi szünet: a valódi bekezdéshatárokon a narrátor nagyobbat lélegzik (alap 0,85 mp, állítható) — lejátszásban, exportban és feliratban egyaránt.</li>
+            <li>Importtisztítás: a BOM, zero-width, hibás Unicode- és vezérlőkarakterek eltűnnek, mielőtt a motor látná őket — kevesebb kiejtési hiba és generálási bicsaklás.</li>
+            <li>Az 500 karakternél hosszabb szövegegységek tagmondat- vagy szóhatáron automatikusan feldarabolódnak, így a hosszú mondatok sem instabilak.</li>
+            <li>Opcionális stúdiómasztering: finom EQ + kompresszor és kétmenetes EBU R128 hangosságillesztés (−19 LUFS) fejezetenként, hibatűrő visszaesésekkel.</li>
           </ul>
         </div>
         <div>
@@ -782,7 +798,7 @@
           <ul class="docs-check-list">
             <li>Hangcache-kártya a Beállításokban: statisztika, árva szegmensek takarítása, automatikus söprés könyv törlésekor.</li>
             <li>Mentett narrátorhang-presetek a Voice Studióban, egyfájlos <code>.aurisvoice</code> exporttal és importtal.</li>
-            <li>A teljes app egynarrátoros felolvasásra hangolva — a többszereplős funkciók kódszinten megvannak, de ki vannak kapcsolva.</li>
+            <li>A teljes app egynarrátoros felolvasásra hangolva: egy hang olvassa a teljes könyvet. A többszereplős funkciók kódszinten megmaradtak, de ki vannak kapcsolva (<code>MULTI_VOICE_NARRATION</code>).</li>
           </ul>
         </div>
       </div>
