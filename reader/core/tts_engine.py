@@ -660,7 +660,7 @@ class TTSEngine:
         """Release a replica model and its graph/cache allocations."""
         self._cancel_load.set()
         if self.model is not None:
-            wrapper = getattr(self.model, "_auris_cuda_graph", None)
+            wrapper = getattr(self.model, "_auris_studio_cuda_graph", None)
             if wrapper is not None:
                 try:
                     wrapper.clear()
@@ -683,7 +683,7 @@ class TTSEngine:
 
     def reload(self):
         if self.model is not None:
-            wrapper = getattr(self.model, "_auris_cuda_graph", None)
+            wrapper = getattr(self.model, "_auris_studio_cuda_graph", None)
             if wrapper is not None:
                 try:
                     wrapper.clear()
@@ -757,10 +757,10 @@ class TTSEngine:
             elif device == "mps":
                 # Apple Silicon (Metal). float32 by default: bfloat16 audibly
                 # clips sentence onsets on MPS (verified on M-series hardware).
-                # Set AURIS_MPS_DTYPE=bf16 to trade quality for speed.
+                # Set AURIS_STUDIO_MPS_DTYPE=bf16 to trade quality for speed.
                 dtype = (
                     torch.bfloat16
-                    if os.environ.get("AURIS_MPS_DTYPE", "").lower() in {"bf16", "bfloat16"}
+                    if os.environ.get("AURIS_STUDIO_MPS_DTYPE", "").lower() in {"bf16", "bfloat16"}
                     else torch.float32
                 )
             else:

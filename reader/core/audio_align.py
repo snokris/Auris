@@ -25,7 +25,7 @@ log = logging.getLogger(__name__)
 
 _WORD_RE = re.compile(r"[^\W_]+", re.UNICODE)
 
-# Whisper language hints for the languages Auris detects. Anything else is
+# Whisper language hints for the languages Auris Studio detects. Anything else is
 # left to Whisper's own language detection.
 _WHISPER_LANGUAGES = {
     "hu": "hungarian",

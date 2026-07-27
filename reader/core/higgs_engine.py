@@ -51,7 +51,7 @@ _OMNIVOICE_TAGS = {
     "surprise-yo": "<|emotion:elation|>",
 }
 _BRACKET_TAG_RE = re.compile(r"\[([a-z0-9_-]+)\]", re.IGNORECASE)
-_WORKER_MARKER = "AURIS_HIGGS_JSON:"
+_WORKER_MARKER = "AURIS_STUDIO_HIGGS_JSON:"
 _JSON_DECODER = json.JSONDecoder()
 
 
@@ -410,7 +410,7 @@ class HiggsTTSEngine:
             # and is essential for Hungarian audiobooks. Respects the
             # ``normalize_text`` setting (default on).
             spoken = apply_text_normalization(text, language) if normalize_text else text
-            # Auris enrichment tags are implementation details of OmniVoice
+            # Auris Studio enrichment tags are implementation details of OmniVoice
             # and must not reach Higgs as literal bracketed words.
             return _BRACKET_TAG_RE.sub("", spoken).strip()
 
@@ -496,11 +496,11 @@ class HiggsTTSEngine:
             audio, sr = sf.read(ref_audio, always_2d=False)
             processed = _prepare_reference(audio, int(sr))
             if len(processed) != len(np.asarray(audio).squeeze()):
-                handle, reference_path = tempfile.mkstemp(suffix=".wav", prefix="auris-higgs-ref-")
+                handle, reference_path = tempfile.mkstemp(suffix=".wav", prefix="auris-studio-higgs-ref-")
                 os.close(handle)
                 sf.write(reference_path, processed, int(sr))
         prompt = self._prompt(text, instruct, speed, language, normalize_text)
-        handle, output_path = tempfile.mkstemp(suffix=".wav", prefix="auris-higgs-out-")
+        handle, output_path = tempfile.mkstemp(suffix=".wav", prefix="auris-studio-higgs-out-")
         os.close(handle)
         try:
             self._generating.set()

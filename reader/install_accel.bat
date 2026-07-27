@@ -1,15 +1,15 @@
 @echo off
-REM Optional GPU acceleration extras for Auris on Windows.
+REM Optional GPU acceleration extras for Auris Studio on Windows.
 REM CUDA Graph (main speedup) needs NO extra packages — enabled via Settings.
 REM This script tries community Triton wheels for Hybrid mode.
 
 echo.
-echo === Auris optional Triton acceleration (Windows) ===
+echo === Auris Studio optional Triton acceleration (Windows) ===
 echo CUDA Graph works without this. Triton is extra and may fail on some setups.
 echo.
 
 python -c "import torch; print('torch', torch.__version__, 'cuda', torch.cuda.is_available())" || (
-  echo ERROR: Activate the same Python env you use for Auris first.
+  echo ERROR: Activate the same Python env you use for Auris Studio first.
   exit /b 1
 )
 
@@ -34,6 +34,6 @@ echo [3/3] Probe
 python -c "from core.tts_accel import probe_accel; import json; print(json.dumps(probe_accel(), indent=2))"
 
 echo.
-echo Done. In Auris Settings set GPU acceleration to Auto or Hybrid, then Reload TTS model.
+echo Done. In Auris Studio Settings set GPU acceleration to Auto or Hybrid, then Reload TTS model.
 :end
 pause

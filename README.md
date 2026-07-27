@@ -1,8 +1,8 @@
-# Auris — lokális hangoskönyvkészítő (snokris-változat)
+# Auris Studio — lokális hangoskönyvkészítő
 
-Teljesen **lokális, ingyenes hangoskönyvkészítő**: EPUB-, PDF- vagy TXT-könyvből felolvasott hangoskönyvet készít (WAV/MP3 + felirat), internetkapcsolat és API-kulcsok nélkül. Kiemelt **magyar nyelvi támogatással** — automatikus magyar nyelvfelismerés, „I. FEJEZET” típusú fejezetdetektálás, magyar párbeszédkezelés, hangklónozás magyar referenciahangból.
+Teljesen **lokális, ingyenes hangoskönyvkészítő**: EPUB-, PDF- vagy TXT-könyvből felolvasott hangoskönyvet készít (MP3/WAV + felirat), internetkapcsolat és API-kulcsok nélkül. Kiemelt **magyar nyelvi támogatással** — automatikus nyelvfelismerés, magyar fejezetdetektálás, magyar számnévolvasás, párbeszédkezelés és hangklónozás magyar referenciahangból.
 
-Ez a repó a [mp3pintyo/Auris](https://github.com/mp3pintyo/Auris) forkja, amely maga is az eredeti [nikhilprasanth/Auris](https://github.com/nikhilprasanth/Auris) projektre épül. A származási lánc: az **eredeti Auris** (nikhilprasanth) adja az OmniVoice-alapú hangoskönyvolvasó alapot; **mp3pintyo forkja** egészítette ki a Higgs TTS 3 motorral és a kiterjedt magyar nyelvi támogatással; ez a változat pedig mindezt **Apple Silicon (macOS) támogatással** és néhány saját minőségjavító funkcióval bővíti. Windows- és Linux-telepítéshez a mp3pintyo-repó útmutatója az irányadó.
+Ez a repó a [mp3pintyo/Auris](https://github.com/mp3pintyo/Auris) forkja, amely maga is az eredeti [nikhilprasanth/Auris](https://github.com/nikhilprasanth/Auris) projektre épül. A származási lánc: az **eredeti Auris** (nikhilprasanth) adja az OmniVoice-alapú hangoskönyvolvasó alapot; **mp3pintyo forkja** egészítette ki a Higgs TTS 3 motorral és a kiterjedt magyar nyelvi támogatással; az **Auris Studio** pedig mindezt Apple Silicon-támogatással, hangminőség-javításokkal, magyar szövegkezeléssel és egy végigvitt exportfolyamattal bővíti. Windows- és Linux-telepítéshez a mp3pintyo-repó útmutatója az irányadó.
 
 ## Képernyőképek
 
@@ -18,23 +18,14 @@ Ez a repó a [mp3pintyo/Auris](https://github.com/mp3pintyo/Auris) forkja, amely
 ### Settings
 ![Settings](assets/settings.png)
 
-## Miben más ez a fork?
-
-- **Apple Silicon (MPS) támogatás** — a TTS-motorok a Metal GPU-n futnak, nem CPU-n. Az OmniVoice float32-ben (a bfloat16 a mondatkezdeteket csípte le M-szérián), a Higgs a natív bfloat16-jában. Vészkapcsolók: `AURIS_MPS_DTYPE=bf16` (OmniVoice), `AURIS_HIGGS_MPS_DTYPE=fp32` (Higgs).
-- **Whisper-illesztett szegmensvágás** — az összevontan generált hang szegmenshatárait szóidőbélyegek és dinamikus programozásos szóillesztés jelöli ki; a vágás a szavak közti szünetbe, nullátmenetre kerül, élsimítással. Ez megszünteti a lecsípett mondatvégeket, az áthallott szófoszlányokat és a határkattanásokat. A Settingsben választható a vágási mód és az illesztéshez használt Whisper-modell (alap: whisper-small).
-- **Mentett narrátorhangok (Voice presets)** — a Voice Studióban a könyv referenciahangja (WAV + átirat) névvel elmenthető, és bármely könyvre egy kattintással alkalmazható.
-- **Single narrator kártya** — a Voice Studio tetején kapcsolható az egynarrátoros mód: bekapcsolva a narrátor olvas mindent, a karakterdetektálás kikapcsol, a felismert szereplők törlődnek; kikapcsolva a detektálás automatikusan újrafut.
-- **Akcentusválasztó bővítés** — „None (natural)” és „Hungarian” opció a hangleírásokban (magyar felolvasáshoz az akcentusjelölés nélküli leírás ajánlott).
-- **Rendezett exportmappák** — minden export a `exports/Szerző/Cím/` mappába kerül (pl. `exports/Dan_Brown/A_titkok_titka/01_PROLÓGUS.mp3`), nem ömlesztve; ismeretlen szerzőnél a szerzőszint kimarad.
-
 ## Telepítés macOS-en (Apple Silicon)
 
 Előfeltétel a [Homebrew](https://brew.sh), utána:
 
 ```bash
 brew install python@3.12 ffmpeg git
-git clone https://github.com/snokris/Auris.git
-cd Auris
+git clone https://github.com/snokris/Auris-Studio.git
+cd Auris-Studio
 python3.12 -m venv reader/.venv
 bash reader/setup.sh
 ```
@@ -51,10 +42,48 @@ Első használatkor a Settings oldalon töltsd le az OmniVoice-modellt (~3 GB), 
 
 ## Használat röviden
 
-1. **Library** — EPUB/PDF/TXT importálása (a magyar nyelvet magától felismeri).
+1. **Library** — EPUB/PDF/TXT importálása; a magyar nyelvet és a fejezethatárokat magától felismeri, a felismert fejezetek pedig import után szerkeszthetők.
 2. **Reader** — lejátszás bármely mondattól; a fejezet hangja előre is legenerálható.
 3. **Voice Studio** — narrátorhang beállítása leírással vagy klónozás referencia-WAV-ból (3–10 másodperces, tiszta, egybeszélős felvétel + pontos átirat); hangpresetek mentése és alkalmazása.
-4. **Export** — fejezetek MP3-ba felirattal (`all`, `2-6` vagy `1,3,7-10` formában).
+4. **Export** — a felső sávból nyíló panelen (`E` billentyű) fejezetek MP3-ba felirattal, `all`, `2-6` vagy `1,3,7-10` formában.
+
+## Miben más az Auris Studio?
+
+### Apple Silicon (MPS)
+
+A TTS-motorok a Metal GPU-n futnak, nem CPU-n. Az OmniVoice float32-ben (a bfloat16 a mondatkezdeteket csípte le M-szérián), a Higgs a natív bfloat16-jában. Vészkapcsolók: `AURIS_STUDIO_MPS_DTYPE=bf16` (OmniVoice), `AURIS_STUDIO_HIGGS_MPS_DTYPE=fp32` (Higgs). Ez a rész PR-ként vissza is került az eredeti projektbe ([mp3pintyo/Auris#1](https://github.com/mp3pintyo/Auris/pull/1)).
+
+### Hangminőség
+
+A Whisper-illesztett szegmensvágás szóidőbélyegek és dinamikus programozásos szóillesztés alapján jelöli ki az összevontan generált hang szegmenshatárait; a vágás a szavak közti szünetbe, nullátmenetre kerül, élsimítással. Ezzel megszűntek a lecsípett mondatvégek, az áthallott szófoszlányok és a határkattanások. A Settingsben választható a vágási mód (`Split coalesced audio` → Aligned) és az illesztéshez használt Whisper-modell (alap: whisper-small).
+
+### Magyar szövegkezelés
+
+Magyar szövegnél a saját számnévolvasó fut le legelőször, még a motorok saját normalizálói előtt — azok ugyanis csak angolul, kínaiul és japánul tudnak, a `num2words` magyar tábláiban pedig a sorszámnevek száz fölött hibásak. A modul (`reader/core/hungarian_numbers.py`) kezeli a tő- és sorszámneveket, a dátumokat, a kötőjeles ragokat, az órákat, a százalékot, a hőfokot és a római számokat, és tudja, hogy csak az utolsó összetételi tag kapja a sorszámragot: a „932. esztendejében” így „kilencszázharminckettedik esztendejében”, nem pedig „kilencszázharminckettő”.
+
+A fejezetfelismerés a kiírt sorszámneveket („Harmadik fejezet”) és a nevesített szakaszokat (Előszó, Epilógus) is fejezethatárnak veszi. A Higgs raw prompt módja szintén átmegy a normalizáláson, így ott sem maradnak számjegyek a felolvasásban.
+
+### Fejezetszerkesztő és címnegyed
+
+Import után a fejezetek átnevezhetők, kihagyhatók, törölhetők és összevonhatók. A címoldal és az impresszum alapból kimarad a felolvasásból, a mottó és a bevezető viszont bent marad, és az első fejezet előtti bevezető próza sem vész el.
+
+### Exportfolyamat
+
+Egyszerre egy export fut, Szünet / Folytatás / Leállítás vezérléssel; a szerver újraindítása után szüneteltetett állapotban tér vissza. Két folyamatjelző, mentett beállítások, könyvtárjelvény és élő állapotpont mutatja, hol tart. A fejezetek egyenként, elkészültükkor íródnak ki, így egy megszakadt export munkája nem vész el. Export közben a motorváltás, az újratöltés és a hangelőnézetek le vannak tiltva.
+
+A kimenet lapos `exports/Szerző_-_Cím/` mappába kerül, és a fájlnevek is tartalmazzák a szerzőt — így a fájlok a mappájukból kiemelve is azonosíthatók:
+
+```
+exports/Dan_Brown_-_A_titkok_titka/
+  Dan_Brown_-_A_titkok_titka_01_PROLÓGUS.mp3
+  Dan_Brown_-_A_titkok_titka_01_PROLÓGUS.srt
+```
+
+Kérhető 1–4 összefűzött MP3 is a hozzájuk illeszkedő, újraidőzített felirattal. Az MP3-kódolás (VBR minőség vagy fix bitráta) és a beszédszünetek — mondatok, párbeszédfordulók, kihagyások és fejezetek között — a Settingsben állíthatók.
+
+### Hangcache és Voice Studio
+
+A Beállítások hangcache-kártyája mutatja a cache méretét, kitakarítja az árva szegmenseket, és könyv törlésekor automatikusan söpör. A Voice Studióban a könyv referenciahangja (WAV + átirat) névvel elmenthető, és bármely könyvre egy kattintással alkalmazható. Az egynarrátoros mód külön kártyán kapcsolható: bekapcsolva a narrátor olvas mindent, a karakterdetektálás kikapcsol és a felismert szereplők törlődnek; kikapcsolva a detektálás automatikusan újrafut. Az akcentusválasztó „None (natural)” és „Hungarian” opcióval bővült — magyar felolvasáshoz az akcentusjelölés nélküli leírás ajánlott.
 
 ## TTS-motorok
 
@@ -73,12 +102,22 @@ Első használatkor a Settings oldalon töltsd le az OmniVoice-modellt (~3 GB), 
 - `Merge short lines` (coalesce) → 720 ajánlott; a szegmenshatárokat az illesztett vágás tartja tisztán
 - `Split coalesced audio` → Aligned (ajánlott)
 - `Alignment ASR model` → whisper-small (gyors) … whisper-large-v3-turbo (legpontosabb)
-- Magyar könyvekhez: single narrator mód, vagy LLM-alapú karakterfelismerés lokális modellel (Ollama / LM Studio)
+- `MP3 mode` → VBR (a szegmensek közti csend így szinte semmibe nem kerül)
+- Magyar könyvekhez: egynarrátoros mód, vagy LLM-alapú karakterfelismerés lokális modellel (Ollama / LM Studio)
 
-## Fejlesztési rend
+## Fejlesztés
 
-A `dev` ág a mindig működő, összefésült állapot; minden téma saját `feature/<téma>` ágon készül, és tesztelés után olvad vissza. A változtatások visszakerülhetnek az eredeti projektbe is: az MPS-támogatás PR-ként beküldve ([mp3pintyo/Auris#1](https://github.com/mp3pintyo/Auris/pull/1)).
+A `main` ág a kiadott állapot, a `dev` a mindig működő, összefésült állapot; minden téma saját `feature/<téma>` ágon készül, és tesztelés után olvad vissza a `dev`-be.
+
+Tesztek futtatása:
+
+```bash
+cd reader
+.venv/bin/python -m unittest discover -s tests
+```
+
+A környezeti változók az `AURIS_STUDIO_` előtagot használják (`AURIS_STUDIO_MPS_DTYPE`, `AURIS_STUDIO_HIGGS_MPS_DTYPE`, `AURIS_STUDIO_OFFLINE`, `AURIS_STUDIO_USE_LOCAL_WHEELS`, `AURIS_STUDIO_WHEELS_DIR`).
 
 ## Köszönet
 
-Az eredeti Auris projektért köszönet **nikhilprasanth**-nak, a Higgs-integrációért és a magyar nyelvi támogatásért **mp3pintyo**-nak, a TTS-motorokért pedig a [k2-fsa/OmniVoice](https://github.com/k2-fsa/OmniVoice) és a [Boson AI](https://huggingface.co/bosonai) csapatának. A fork licence az eredeti projektét követi (lásd `LICENSE`).
+Az eredeti Auris projektért köszönet **nikhilprasanth**-nak, a Higgs-integrációért és a magyar nyelvi támogatásért **mp3pintyo**-nak, a TTS-motorokért pedig a [k2-fsa/OmniVoice](https://github.com/k2-fsa/OmniVoice) és a [Boson AI](https://huggingface.co/bosonai) csapatának. Az Auris Studio licence az eredeti projektét követi (lásd `LICENSE`).

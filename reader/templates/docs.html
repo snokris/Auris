@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Dokumentáció — Auris{% endblock %}
+{% block title %}Dokumentáció — Auris Studio{% endblock %}
 {% block content %}
 <div class="docs-shell">
   <aside class="docs-sidebar" aria-label="Dokumentáció tartalomjegyzéke">
@@ -7,7 +7,7 @@
       <div class="docs-toc-label">Tartalom</div>
       <nav class="docs-toc">
         <a href="#overview" class="active">Áttekintés</a>
-        <a href="#auris">Auris funkciók</a>
+        <a href="#auris-studio">Auris Studio-funkciók</a>
         <a href="#workflow">Munkafolyamat</a>
         <a href="#llm-detection">Helyi LLM felismerés</a>
         <a href="#voices">Hangok és klónozás</a>
@@ -23,7 +23,7 @@
         <span class="docs-side-note-mark">i</span>
         <div>
           <strong>Két külön TTS motor</strong>
-          <span>Az Auris egyszerre egy motort tart aktívan. A közös könyv- és hangadatokat mindkettő használja.</span>
+          <span>Az Auris Studio egyszerre egy motort tart aktívan. A közös könyv- és hangadatokat mindkettő használja.</span>
         </div>
       </div>
     </div>
@@ -32,11 +32,11 @@
   <main class="docs-main">
     <header class="docs-hero" id="overview">
       <div>
-        <h1>Auris dokumentáció</h1>
+        <h1>Auris Studio dokumentáció</h1>
         <p>
           Helyi könyvolvasás, többszereplős felolvasás és audiobook-export
           OmniVoice vagy Higgs TTS 3 motorral. Ez az oldal a jelenleg
-          implementált Auris-funkciókat és a két motor eltéréseit írja le.
+          implementált Auris Studio-funkciókat és a két motor eltéréseit írja le.
         </p>
       </div>
       <a class="docs-settings-link" href="/settings">Beállítások megnyitása <span aria-hidden="true">→</span></a>
@@ -45,7 +45,7 @@
     <section class="benchmark-lead docs-engine-intro" aria-labelledby="engine-title">
       <div class="benchmark-lead-intro">
         <span class="docs-kicker">TTS motorválasztás</span>
-        <h2 id="engine-title">Közös Auris, két eltérő beszédmotor</h2>
+        <h2 id="engine-title">Közös Auris Studio, két eltérő beszédmotor</h2>
         <p>
           A könyvtár, a fejezetek, a szereplők, a Voice Studio, a lejátszás,
           a könyvjelzők és az export közös. A modellbetöltés és a generálási
@@ -70,16 +70,16 @@
         <span class="docs-callout-icon" aria-hidden="true">↻</span>
         <div>
           <strong>Motorváltás után Reload TTS engine szükséges.</strong>
-          <p>Az Auris előbb leállítja és felszabadítja az előző motort, majd külön környezetben betölti a kiválasztottat.</p>
+          <p>Az Auris Studio előbb leállítja és felszabadítja az előző motort, majd külön környezetben betölti a kiválasztottat.</p>
         </div>
       </div>
     </section>
 
-    <section class="docs-section" id="auris">
+    <section class="docs-section" id="auris-studio">
       <div class="docs-section-heading">
         <span class="docs-section-index">01</span>
         <div>
-          <h2>Auris-funkciók — mindkét motorral</h2>
+          <h2>Auris Studio-funkciók — mindkét motorral</h2>
           <p>A következő képességek nem kötődnek egy adott TTS modellhez.</p>
         </div>
       </div>
@@ -129,7 +129,7 @@
           <p>A motorválasztás nem változtatja meg a könyv feldolgozásának fő lépéseit.</p>
         </div>
       </div>
-      <div class="pipeline" aria-label="Az Auris feldolgozási folyamata">
+      <div class="pipeline" aria-label="Az Auris Studio feldolgozási folyamata">
         <div class="pipeline-node"><span class="pipeline-icon">1</span><strong>Import</strong><small>EPUB · PDF · TXT</small></div>
         <span class="pipeline-connector" aria-hidden="true">→</span>
         <div class="pipeline-node"><span class="pipeline-icon">2</span><strong>Elemzés</strong><small>fejezet · nyelv · szereplő</small></div>
@@ -144,7 +144,7 @@
         <div>
           <h3>Karakterfelismerés</h3>
           <p>
-            Import után az Auris a beállított helyi LLM-mel fejezetenként
+            Import után az Auris Studio a beállított helyi LLM-mel fejezetenként
             azonosítja a szereplőket és a konkrét párbeszédek beszélőit.
             LM Studio, Ollama és más OpenAI-kompatibilis <code>/v1</code>
             végpont használható. Az elemzés előtt a TTS modell kiürül a
@@ -157,7 +157,9 @@
           <p>
             A fejezetek felolvasási szegmensekre bomlanak. A számnormalizálás
             számokat, dátumokat és pénzértékeket alakíthat beszélt formára.
-            Magyar egész számokhoz az Auris a <code>num2words</code> útvonalát használja.
+            Magyar szövegnél a saját számnévolvasó fut le legelőször
+            (<code>core/hungarian_numbers.py</code>), így a magyar számok, dátumok
+            és ragozott alakok nem jutnak el a motorok angol normalizálóihoz.
           </p>
         </div>
       </div>
@@ -206,7 +208,7 @@
         <p class="docs-footnote" style="margin-top:14px">
           A kontextusméretet a modellszerverben kell beállítani. A teszthez az
           LM Studio <strong>160&nbsp;000 tokenes</strong> kontextust kapott.
-          Az Auris ettől függetlenül szándékosan fejezetenként küldi a szöveget:
+          Az Auris Studio ettől függetlenül szándékosan fejezetenként küldi a szöveget:
           a strukturált válasz mérete általában hamarabb jelent korlátot, mint
           a modell bemeneti kontextusa.
         </p>
@@ -217,7 +219,7 @@
           <h3>Mi történik importkor?</h3>
           <ul class="docs-check-list">
             <li>Az import elindít egy háttérben futó karakter- és beszélőelemzést.</li>
-            <li>Az Auris előbb leállítja és kiüríti a TTS modellt, hogy felszabadítsa a VRAM-ot.</li>
+            <li>Az Auris Studio előbb leállítja és kiüríti a TTS modellt, hogy felszabadítsa a VRAM-ot.</li>
             <li>A helyi LLM fejezetenként megkapja a számozott szövegegységeket.</li>
             <li>Kanonikus szereplőlista és minden párbeszédhez külön beszélő-hozzárendelés készül.</li>
             <li>Az eredmény tartósan a könyvhöz kerül; a Reader, Voice Studio, lejátszás és export ugyanazt használja.</li>
@@ -347,7 +349,7 @@
         <div>
           <h2>OmniVoice</h2>
           <p>
-            A k2-fsa többnyelvű TTS modellje. Az Aurisban voice clone,
+            A k2-fsa többnyelvű TTS modellje. Az Auris Studio Studióban voice clone,
             voice design és automatikus hang módban használható, jellemzően
             24 kHz-es kimenettel.
           </p>
@@ -357,7 +359,7 @@
         <div>
           <h3>Erősségek</h3>
           <ul class="docs-check-list">
-            <li><strong>600+ nyelv</strong>; ismert nyelvnél az Auris átadja a nyelvkódot.</li>
+            <li><strong>600+ nyelv</strong>; ismert nyelvnél az Auris Studio átadja a nyelvkódot.</li>
             <li>Voice clone pontos referenciahanggal és referenciaszöveggel.</li>
             <li>Voice design nem, kor, hangmagasság és akcentus leírásából.</li>
             <li>Lista/batch generálás és újrahasznosítható clone prompt.</li>
@@ -369,7 +371,7 @@
           <h3>Minőségi kiindulópont</h3>
           <ul class="docs-check-list">
             <li><strong>Speech quality:</strong> 16 step; végső minőséghez 24 vagy 32.</li>
-            <li><strong>Guidance:</strong> az Auris/upstream alapérték 2.0.</li>
+            <li><strong>Guidance:</strong> az Auris Studio és az upstream alapértéke 2.0.</li>
             <li><strong>Speed:</strong> 1.0; egyszerre csak egy paramétert változtass.</li>
             <li><strong>Normalize numbers:</strong> könyvszövegnél általában bekapcsolva.</li>
             <li><strong>Referencia:</strong> azonos nyelvű minta adja a legsemlegesebb kiejtést.</li>
@@ -416,13 +418,13 @@
             <li>A hivatalos modellkártyán a <strong>magyar a WER/CER 5 alatti</strong>, magasabb minőségi csoportban szerepel.</li>
             <li>Magyar könyvhöz a <strong>Raw prompt mode</strong> a biztos kiindulópont.</li>
             <li>Használj magyar referenciahangot és hozzá betűpontos magyar átiratot.</li>
-            <li>Az Auris javítja a régi PDF-ek gyakori <code>õ→ő</code> és <code>û→ű</code> karakterhibáit.</li>
+            <li>Az Auris Studio javítja a régi PDF-ek gyakori <code>õ→ő</code> és <code>û→ű</code> karakterhibáit.</li>
             <li>A worker teljes kommunikációja UTF-8; így a tokenizer sértetlen magyar szöveget kap.</li>
             <li>A Raw útvonal a projektben található, bevált Transformers <code>direct_speech()</code> hívást követi.</li>
           </ul>
         </div>
         <div>
-          <h3>Auris-integráció</h3>
+          <h3>Auris Studio-integráció</h3>
           <ul class="docs-check-list">
             <li>A hivatalos képességeket a Transformers-kompatibilis community adapterrel futtatja helyben.</li>
             <li>Külön <code>.higgs_runtime</code> környezetben használ Transformers 5.13-at.</li>
@@ -443,7 +445,7 @@
             <tr><td>Top K</td><td><strong>50</strong></td><td>A megtartott legvalószínűbb tokenek száma; 0 esetén kikapcsolható.</td></tr>
             <tr><td>Maximum new tokens</td><td><strong>1024</strong></td><td>A generálható audiótokenek felső korlátja.</td></tr>
             <tr><td>Seed</td><td><strong>-1</strong></td><td>-1 véletlen; rögzített egész szám ismételhető A/B összehasonlításhoz.</td></tr>
-            <tr><td>Prompt mode</td><td><strong>Raw</strong></td><td>Raw: tiszta szöveg. Expressive: Auris normalizálás és automatikus vezérlőtokenek.</td></tr>
+            <tr><td>Prompt mode</td><td><strong>Raw</strong></td><td>Raw: tiszta szöveg. Expressive: Auris Studio-normalizálás és automatikus vezérlőtokenek.</td></tr>
           </tbody>
         </table>
       </div>
@@ -684,7 +686,7 @@
         </details>
         <details>
           <summary>A Stop után még fut a generálás</summary>
-          <div><p>A jelenlegi Auris megszakítja a böngészős kéréseket és a backend generálást is. Higgs esetén leállítja az izolált worker processzt, majd újratölti a modellt. Régi szerverfolyamat esetén indítsd újra a <code>run.bat</code>-ot és frissíts <code>Ctrl+F5</code>-tel.</p></div>
+          <div><p>A jelenlegi Auris Studio megszakítja a böngészős kéréseket és a backend generálást is. Higgs esetén leállítja az izolált worker processzt, majd újratölti a modellt. Régi szerverfolyamat esetén indítsd újra a <code>run.bat</code>-ot és frissíts <code>Ctrl+F5</code>-tel.</p></div>
         </details>
         <details>
           <summary>OmniVoice exportnál csak egy worker indul</summary>
@@ -692,11 +694,11 @@
         </details>
         <details>
           <summary>CUDA out of memory</summary>
-          <div><p>OmniVoice-nál csökkentsd a batch méretét és állíts egy export workerre. Higgsnél zárj be más GPU-igényes programokat, állítsd le a régi motort, majd töltsd újra. Motorváltáskor ne tarts két külön Auris szervert egyszerre.</p></div>
+          <div><p>OmniVoice-nál csökkentsd a batch méretét és állíts egy export workerre. Higgsnél zárj be más GPU-igényes programokat, állítsd le a régi motort, majd töltsd újra. Motorváltáskor ne tarts két külön Auris Studio-szervert egyszerre.</p></div>
         </details>
         <details>
           <summary>Megváltoztattam a hangot, de a régi felolvasás hallatszik</summary>
-          <div><p>Mentsd a Voice Studio módosítását. Az Auris törli az érintett szegmensrekordokat, és új cache-kulccsal generál. Ha a böngészőben régi JavaScript fut, használj <code>Ctrl+F5</code>-öt.</p></div>
+          <div><p>Mentsd a Voice Studio módosítását. Az Auris Studio törli az érintett szegmensrekordokat, és új cache-kulccsal generál. Ha a böngészőben régi JavaScript fut, használj <code>Ctrl+F5</code>-öt.</p></div>
         </details>
         <details>
           <summary>Az MP3 export nem készül el</summary>
@@ -709,8 +711,8 @@
       <div class="docs-section-heading">
         <span class="docs-section-index">10</span>
         <div>
-          <h2>A fork újdonságai (snokris/Auris)</h2>
-          <p>Ez a változat az eredeti Aurist Apple Silicon támogatással és hangminőség-javításokkal bővíti.</p>
+          <h2>Az Auris Studio újdonságai (snokris/Auris-Studio)</h2>
+          <p>Ez a változat az eredeti Aurist Apple Silicon támogatással, hangminőség-javításokkal, magyar nyelvi finomításokkal és egy végigvitt exportfolyamattal bővíti.</p>
         </div>
       </div>
       <div class="docs-two-column">
@@ -719,7 +721,7 @@
           <ul class="docs-check-list">
             <li>Mindkét motor a Metal GPU-n fut macOS-en, nem CPU-n.</li>
             <li>OmniVoice float32-ben (a bfloat16 M-szérián a mondatkezdeteket csípte le), a Higgs a natív bfloat16-jában.</li>
-            <li>Vészkapcsolók: <code>AURIS_MPS_DTYPE=bf16</code> (OmniVoice), <code>AURIS_HIGGS_MPS_DTYPE=fp32</code> (Higgs).</li>
+            <li>Vészkapcsolók: <code>AURIS_STUDIO_MPS_DTYPE=bf16</code> (OmniVoice), <code>AURIS_STUDIO_HIGGS_MPS_DTYPE=fp32</code> (Higgs).</li>
             <li>A betöltési naplósor mutatja az eszközt és a pontosságot: <code>device=mps, dtype=…</code>.</li>
           </ul>
         </div>
@@ -731,11 +733,47 @@
             <li>Hiba esetén automatikusan a régi, karakterarányos vágásra vált vissza.</li>
           </ul>
         </div>
+        <div>
+          <h3>Magyar szövegkezelés</h3>
+          <ul class="docs-check-list">
+            <li>Saját magyar számnévolvasó: a tő- és sorszámnevek, dátumok, kötőjeles ragok, órák, százalék és a római számok a normalizálás első lépéseként dőlnek el, még a motorok saját normalizálói előtt.</li>
+            <li>Csak az utolsó összetételi tag kapja a sorszámragot: <code>932.</code> a helyén „kilencszázharminckettedik”, nem „kilencszázharminckettő”.</li>
+            <li>Magyar fejezetfelismerés: kiírt sorszámnevek („Harmadik fejezet”) és nevesített szakaszok (Előszó, Epilógus) is fejezethatárt jelentenek.</li>
+            <li>A Higgs raw prompt módja is átmegy a normalizáláson, így a számok ott sem maradnak számjegyek.</li>
+          </ul>
+        </div>
+        <div>
+          <h3>Fejezetszerkesztő és címnegyed</h3>
+          <ul class="docs-check-list">
+            <li>Fejezetek átnevezése, kihagyása, törlése és összevonása import után.</li>
+            <li>A címoldal és az impresszum alapból kimarad, a mottó és a bevezető viszont bent marad felolvasandó szakaszként.</li>
+            <li>Az első fejezet előtti bevezető próza nem vész el.</li>
+          </ul>
+        </div>
+        <div>
+          <h3>Exportfolyamat</h3>
+          <ul class="docs-check-list">
+            <li>Egyszerre egy aktív export, Szünet / Folytatás / Leállítás vezérléssel; újraindításkor szüneteltetett állapotban tér vissza.</li>
+            <li>Két folyamatjelző, mentett beállítások, könyvtárjelvény és élő állapotpont; a fejezetek egyenként, elkészültükkor íródnak ki.</li>
+            <li>Export közben a motorváltás, az újratöltés és a hangelőnézetek le vannak tiltva.</li>
+            <li>Végül 1–4 összefűzött MP3 és a hozzájuk illeszkedő SRT is készíthető.</li>
+            <li>A fájlnevek tartalmazzák a szerzőt, a kimenet pedig lapos <code>exports/Szerző_-_Cím/</code> mappába kerül.</li>
+            <li>Az MP3-bitráta és a beszédszünetek a Beállításokban állíthatók.</li>
+          </ul>
+        </div>
+        <div>
+          <h3>Hangcache és Voice Studio</h3>
+          <ul class="docs-check-list">
+            <li>Hangcache-kártya a Beállításokban: statisztika, árva szegmensek takarítása, automatikus söprés könyv törlésekor.</li>
+            <li>Mentett narrátorhang-presetek a Voice Studióban.</li>
+            <li>Egynarrátoros mód külön kártyán, amely letiltja és elfelejti a szereplőhangokat.</li>
+          </ul>
+        </div>
       </div>
     </section>
 
     <footer class="docs-footer">
-      <span>Auris · helyi, kétmotoros audiobook workflow</span>
+      <span>Auris Studio · helyi, kétmotoros audiobook workflow</span>
       <a href="#overview">Vissza az elejére ↑</a>
     </footer>
   </main>

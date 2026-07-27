@@ -44,7 +44,7 @@ DEFAULTS: dict = {
     'higgs_max_new_tokens': 1024,
     'higgs_seed': -1,
     # raw = match the reference Gradio app (plain text, no automatic controls)
-    # expressive = apply Auris normalization, scene speed and expression tags
+    # expressive = apply Auris Studio normalization, scene speed and expression tags
     'higgs_prompt_mode': 'raw',
     'higgs_default_emotion': 'none',
     'higgs_default_style': 'none',

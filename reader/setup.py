@@ -1,5 +1,5 @@
 """
-Auris / OmniReader installer.
+Auris Studio / OmniReader installer.
 
 Detects hardware, installs the appropriate PyTorch build, then installs
 OmniVoice and the reader dependencies.
@@ -8,9 +8,9 @@ Usage:
     python setup.py
 
 Environment:
-    AURIS_OFFLINE=1          Force local-wheel-only installs.
-    AURIS_USE_LOCAL_WHEELS=1 Use a local wheel directory before package indexes.
-    AURIS_WHEELS_DIR=...     Override the local wheel directory path.
+    AURIS_STUDIO_OFFLINE=1          Force local-wheel-only installs.
+    AURIS_STUDIO_USE_LOCAL_WHEELS=1 Use a local wheel directory before package indexes.
+    AURIS_STUDIO_WHEELS_DIR=...     Override the local wheel directory path.
 """
 
 import os
@@ -30,14 +30,14 @@ _OMNIVOICE_CANDIDATES = (
     REPO_DIR / "OmniVoice",
 )
 OMNIVOICE_SRC = next((p for p in _OMNIVOICE_CANDIDATES if p.exists()), _OMNIVOICE_CANDIDATES[0])
-_WHEELS_OVERRIDE = os.environ.get("AURIS_WHEELS_DIR", "").strip()
+_WHEELS_OVERRIDE = os.environ.get("AURIS_STUDIO_WHEELS_DIR", "").strip()
 WHEELS_DIR = Path(_WHEELS_OVERRIDE) if _WHEELS_OVERRIDE else (REPO_DIR / "wheels")
-STRICT_OFFLINE = os.environ.get("AURIS_OFFLINE", "").strip().lower() in {
+STRICT_OFFLINE = os.environ.get("AURIS_STUDIO_OFFLINE", "").strip().lower() in {
     "1",
     "true",
     "yes",
 }
-USE_LOCAL_WHEELS = STRICT_OFFLINE or os.environ.get("AURIS_USE_LOCAL_WHEELS", "").strip().lower() in {
+USE_LOCAL_WHEELS = STRICT_OFFLINE or os.environ.get("AURIS_STUDIO_USE_LOCAL_WHEELS", "").strip().lower() in {
     "1",
     "true",
     "yes",
@@ -57,7 +57,7 @@ def banner():
     print(
         f"""
 {BD}+------------------------------------------+{W}
-{BD}|         Auris Setup Installer            |{W}
+{BD}|      Auris Studio Setup Installer        |{W}
 {BD}|   Audiobook Reader + OmniVoice stack    |{W}
 {BD}+------------------------------------------+{W}
 """
@@ -411,10 +411,10 @@ def main():
         else:
             info(f"Using local wheels from {WHEELS_DIR}; missing packages will be downloaded if needed.")
     elif WHEELS_DIR.exists() and not USE_LOCAL_WHEELS:
-        info(f"Ignoring local wheels at {WHEELS_DIR} unless AURIS_USE_LOCAL_WHEELS=1 is set.")
+        info(f"Ignoring local wheels at {WHEELS_DIR} unless AURIS_STUDIO_USE_LOCAL_WHEELS=1 is set.")
     elif STRICT_OFFLINE:
         raise RuntimeError(
-            f"AURIS_OFFLINE=1 was set, but no wheel cache was found in: {WHEELS_DIR}"
+            f"AURIS_STUDIO_OFFLINE=1 was set, but no wheel cache was found in: {WHEELS_DIR}"
         )
 
     if not STRICT_OFFLINE:

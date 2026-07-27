@@ -1,5 +1,5 @@
 @echo off
-:: Auris - Windows setup wrapper
+:: Auris Studio - Windows setup wrapper
 :: Usage: double-click or run from Command Prompt
 
 cd /d "%~dp0"

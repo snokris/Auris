@@ -17,7 +17,7 @@ class HiggsPromptTests(unittest.TestCase):
     def test_worker_reply_parser_tolerates_progress_tail_and_prefix(self):
         line = (
             "\rLoading weights 100% "
-            'AURIS_HIGGS_JSON:{"ok":true,"event":"ready"}'
+            'AURIS_STUDIO_HIGGS_JSON:{"ok":true,"event":"ready"}'
             "\rprogress renderer tail"
         )
         self.assertEqual(

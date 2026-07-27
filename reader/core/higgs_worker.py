@@ -15,7 +15,7 @@ import threading
 import traceback
 
 
-PREFIX = "AURIS_HIGGS_JSON:"
+PREFIX = "AURIS_STUDIO_HIGGS_JSON:"
 _REPLY_LOCK = threading.Lock()
 _PROTOCOL_STDOUT = sys.stdout
 
@@ -91,11 +91,11 @@ def main() -> None:
         # float32 because bfloat16 clipped sentence onsets there), Higgs
         # was trained and shipped in bfloat16 — it is the model's native
         # dtype and roughly halves memory and doubles throughput on Metal.
-        # Set AURIS_HIGGS_MPS_DTYPE=fp32 if you hear artifacts.
+        # Set AURIS_STUDIO_HIGGS_MPS_DTYPE=fp32 if you hear artifacts.
         device = "mps"
         dtype = (
             torch.float32
-            if os.environ.get("AURIS_HIGGS_MPS_DTYPE", "").lower()
+            if os.environ.get("AURIS_STUDIO_HIGGS_MPS_DTYPE", "").lower()
             in {"fp32", "float32"}
             else torch.bfloat16
         )

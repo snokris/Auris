@@ -1,5 +1,5 @@
 @echo off
-:: Auris - Windows launcher
+:: Auris Studio - Windows launcher
 :: The TTS model loads in the background; the app opens immediately.
 :: Model must be present at: ..\model_backup\OmniVoice\
 

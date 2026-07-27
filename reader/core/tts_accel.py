@@ -194,7 +194,7 @@ def _fast_predict_tokens_with_scoring(
 ):
     """Equivalent greedy CFG scoring with one log-softmax instead of three."""
     if getattr(gen_config, "class_temperature", 0.0) > 0.0:
-        return model._auris_original_predict_tokens(
+        return model._auris_studio_original_predict_tokens(
             c_logits, u_logits, gen_config
         )
 
@@ -217,13 +217,13 @@ def _fast_predict_tokens_with_scoring(
 
 def apply_scoring_optimization(model) -> bool:
     """Install the exact greedy CFG fast path used by audiobook export."""
-    if hasattr(model, "_auris_original_predict_tokens"):
+    if hasattr(model, "_auris_studio_original_predict_tokens"):
         return True
     original = getattr(model, "_predict_tokens_with_scoring", None)
     if original is None:
         log.warning("OmniVoice scoring optimization unavailable")
         return False
-    model._auris_original_predict_tokens = original
+    model._auris_studio_original_predict_tokens = original
     model._predict_tokens_with_scoring = MethodType(
         _fast_predict_tokens_with_scoring, model
     )
@@ -370,7 +370,7 @@ def apply_acceleration(model, mode: str | None = "auto") -> dict:
         status["cuda_graph"] = wrapper is not None
         if wrapper is not None:
             # Keep a handle so reload can clear graphs.
-            model._auris_cuda_graph = wrapper
+            model._auris_studio_cuda_graph = wrapper
 
     if effective == "hybrid":
         if status["triton"] and status["cuda_graph"]:

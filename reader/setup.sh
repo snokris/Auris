@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Auris - Linux / macOS setup wrapper
+# Auris Studio - Linux / macOS setup wrapper
 # Usage: bash setup.sh
 
 set -e

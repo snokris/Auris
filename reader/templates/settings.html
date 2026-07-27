@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Settings — Auris{% endblock %}
+{% block title %}Settings — Auris Studio{% endblock %}
 {% block content %}
 <div class="settings-page">
   <h1 class="settings-page-title">Settings</h1>
@@ -130,12 +130,12 @@
       <label>Prompt mode</label>
       <select id="higgs-prompt-mode" class="select-input" onchange="toggleHiggsPromptMode(this.value)">
         <option value="raw">Raw — friend app compatible (recommended for Hungarian)</option>
-        <option value="expressive">Auris expressive — automatic controls</option>
+        <option value="expressive">Auris Studio expressive — automatic controls</option>
       </select>
       <span class="muted" style="font-size:.78rem">
         Raw sends clean text exactly like the local Gradio implementation.
         Expressive adds number normalization, narrator pitch/whisper, scene speed
-        and Auris expression tags.
+        and Auris Studio expression tags.
       </span>
     </div>
     <div class="setting-row higgs-expressive-control">
@@ -170,7 +170,7 @@
         <option value="expressive_high">High</option>
       </select>
       <span class="muted" style="font-size:.78rem">
-        Auris also maps scene speed, whisper/pitch instructions, pauses and its
+        Auris Studio also maps scene speed, whisper/pitch instructions, pauses and its
         existing non-verbal tags to Higgs inline control tokens.
       </span>
     </div>
@@ -185,7 +185,7 @@
   <section class="settings-section">
     <div class="settings-section-title">Character &amp; Dialogue Speaker Detection</div>
     <p class="section-desc">
-      During book import Auris can ask a local language model who speaks each
+      During book import Auris Studio can ask a local language model who speaks each
       dialogue unit. TTS is unloaded first, so the two models do not compete for VRAM.
     </p>
     <div class="setting-row">
@@ -233,7 +233,7 @@
         <span id="llm-test-hint" class="status-hint"></span>
       </div>
       <div class="status-block">
-        LM Studio context length is configured in LM Studio itself. Auris sends
+        LM Studio context length is configured in LM Studio itself. Auris Studio sends
         one chapter at a time and requests strict JSON speaker assignments.
       </div>
     </div>
