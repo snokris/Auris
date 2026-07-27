@@ -50,3 +50,6 @@ desktop.ini
 *.swo
 # Local LLM evaluation output
 reader/data/llm_eval_*
+
+# Saját hangpresetek referencia-WAV-jai
+reader/data/voice_presets/
