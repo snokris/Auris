@@ -34,6 +34,22 @@ log = logging.getLogger(__name__)
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024  # 500 MB
 
+# ── Multi-voice narration: DISABLED ──────────────────────────────────────────
+#
+# Auris Studio is built for one lifelike Hungarian narrator voice. The
+# multi-character machinery (character detection, per-character voices,
+# dialogue-speaker attribution) is kept in the codebase but the app never
+# takes those code paths while this flag is False:
+#   * every book behaves as single-narrator (see _book_single_narrator_mode)
+#   * import never starts character analysis (no LLM / spaCy run)
+#   * the single-narrator toggle cannot be switched off via the API
+#   * the related UI blocks are commented out in voice_studio.html,
+#     settings.html, docs.html, settings.js, voice_studio.js and library.js
+#     (search for "MULTI_VOICE" in those files)
+# To bring multi-voice back: set this to True and restore the commented-out
+# UI blocks.
+MULTI_VOICE_NARRATION = False
+
 UPLOAD_DIR = os.path.join(os.path.dirname(__file__), 'uploads')
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
@@ -149,6 +165,10 @@ def _book_narrator_instruct(book: dict | None) -> str:
 
 
 def _book_single_narrator_mode(book: dict | None) -> bool:
+    if not MULTI_VOICE_NARRATION:
+        # Multi-voice narration is disabled: every book reads with the single
+        # narrator voice regardless of what is stored in the database.
+        return True
     if not book:
         return False
     return bool(book.get('single_narrator_mode'))
@@ -276,6 +296,8 @@ def _segments_match_rows(segs: list[dict], rows) -> bool:
             return False
         if bool(row['is_dialogue']) != bool(seg['is_dialogue']):
             return False
+        if bool(row['ends_paragraph']) != bool(seg.get('ends_paragraph')):
+            return False
 
     return True
 
@@ -331,6 +353,7 @@ def reader_page(book_id):
             'segment': int(audio_opts['pause_segment'] * 1000),
             'dialogue': int(audio_opts['pause_dialogue'] * 1000),
             'ellipsis': int(audio_opts['pause_ellipsis'] * 1000),
+            'paragraph': int(audio_opts['pause_paragraph'] * 1000),
         },
     )
 
@@ -384,7 +407,10 @@ def import_book():
     detection_mode = str(
         detection_config.get('character_detection_mode', 'legacy') or 'legacy'
     ).lower()
-    single_narrator_default = bool(app_settings.get('single_narrator_mode', False))
+    single_narrator_default = (
+        bool(app_settings.get('single_narrator_mode', False))
+        or not MULTI_VOICE_NARRATION
+    )
     if single_narrator_default:
         # One narrator reads everything: character detection is skipped.
         analysis_status = 'complete'
@@ -399,7 +425,7 @@ def import_book():
             'VALUES (?,?,?,?,?,?,?,?,?,?,?)',
             (data['title'], data['author'], dest, ext,
              data.get('cover_b64'), data.get('language', 'en'),
-             int(bool(app_settings.get('single_narrator_mode', False))), len(chapters),
+             int(single_narrator_default), len(chapters),
              analysis_status, detection_mode,
              detection_config.get('llm_model', '') if detection_mode == 'llm' else 'spaCy/regex')
         )
@@ -934,6 +960,8 @@ def update_narrator(book_id):
         single_narrator_mode = raw_mode.strip().lower() in {'1', 'true', 'yes', 'on'}
     else:
         single_narrator_mode = bool(raw_mode)
+    if not MULTI_VOICE_NARRATION:
+        single_narrator_mode = True
     narrator_changed = instruct != _book_narrator_instruct(book_data)
     mode_changed = single_narrator_mode != _book_single_narrator_mode(book_data)
     raw_ref_text = body.get('ref_text', book_data.get('narrator_ref_text') or '')
@@ -978,6 +1006,10 @@ def set_single_narrator(book_id):
     """
     body = request.get_json(force=True) or {}
     enabled = bool(body.get('enabled'))
+    if not enabled and not MULTI_VOICE_NARRATION:
+        return jsonify({
+            'error': 'Multi-voice narration is disabled in this build.'
+        }), 400
 
     with get_conn() as conn:
         book = conn.execute(
@@ -1579,6 +1611,7 @@ def get_segments(book_id, chapter_id):
         'text': r['text'],
         'character_name': r['character_name'],
         'is_dialogue': bool(r['is_dialogue']),
+        'ends_paragraph': bool(r['ends_paragraph']),
         'has_audio': bool(r['audio_path'] and os.path.exists(r['audio_path'])),
         'duration_sec': r['duration_sec'],
         'cache_key': r['cache_key'],
@@ -1596,11 +1629,13 @@ def _store_segments(book_id, chapter_id, segs):
             conn.execute(
                 'INSERT INTO tts_segments '
                 '(book_id, chapter_id, segment_index, text, enriched_text, '
-                'character_name, instruct, speed, is_dialogue, cache_key) '
-                'VALUES (?,?,?,?,?,?,?,?,?,?)',
+                'character_name, instruct, speed, is_dialogue, ends_paragraph, '
+                'cache_key) '
+                'VALUES (?,?,?,?,?,?,?,?,?,?,?)',
                 (book_id, chapter_id, i, s['text'], s['enriched_text'],
                  s['character_name'], s['instruct'], s['speed'],
-                 int(s['is_dialogue']), cache_key)
+                 int(s['is_dialogue']), int(bool(s.get('ends_paragraph'))),
+                 cache_key)
             )
 
 
@@ -2333,9 +2368,20 @@ def _run_chapter_export(job_id: str, book_id: int, chapter_id: int, audio_fmt: s
             )
         job['message'] = 'Merging audio...'
         colors = _get_char_colors(book_id)
+        chapter_number = None
+        with get_conn() as conn:
+            ordered = conn.execute(
+                'SELECT id FROM chapters WHERE book_id=? AND excluded=0 '
+                'ORDER BY order_num', (book_id,)
+            ).fetchall()
+        for number, row in enumerate(ordered, 1):
+            if row['id'] == chapter_id:
+                chapter_number = number
+                break
         result = exporter.export_single_chapter(
             ch['title'], book['title'], segs, colors, audio_fmt, sub_fmt,
             author=book['author'],
+            track_number=chapter_number,
         )
         job['state'] = 'complete'
         job['message'] = 'Done'
@@ -2400,6 +2446,8 @@ def _join_chapters_into_parts(
             audio_fmt=audio_fmt,
             sub_fmt=sub_fmt,
             opts=audio_opts,
+            author=book['author'],
+            part_number=index,
         ))
         job['parts_written'] = index
     return results
@@ -2509,6 +2557,8 @@ def _run_chapterwise_export(
                     output_dir=output_dir,
                     file_stem=stem,
                     opts=audio_opts,
+                    author=book['author'],
+                    track_number=int(ch_data['chapter_number']),
                 )
             written += 1
             job['chapters_written'] = written
@@ -2993,7 +3043,8 @@ def save_settings():
         'llm_batch_chars',
         'mp3_mode', 'mp3_vbr_quality', 'mp3_bitrate',
         'export_pause_segment', 'export_pause_dialogue', 'export_pause_ellipsis',
-        'export_pause_chapter', 'export_join_parts', 'export_part_count',
+        'export_pause_paragraph', 'export_pause_chapter',
+        'audio_mastering', 'export_join_parts', 'export_part_count',
     }
     updates = {k: v for k, v in body.items() if k in allowed}
     if 'tts_engine' in updates:
@@ -3111,6 +3162,7 @@ def save_settings():
         ('export_pause_segment', 0.35),
         ('export_pause_dialogue', 0.55),
         ('export_pause_ellipsis', 1.5),
+        ('export_pause_paragraph', 0.85),
     ):
         if key in updates:
             try:
@@ -3125,6 +3177,8 @@ def save_settings():
                 max(0.0, min(float(updates['export_pause_chapter']), 10.0)), 2)
         except (TypeError, ValueError):
             updates['export_pause_chapter'] = exporter.CHAPTER_BREAK_PAUSE_SEC
+    if 'audio_mastering' in updates:
+        updates['audio_mastering'] = bool(updates['audio_mastering'])
     if 'export_join_parts' in updates:
         updates['export_join_parts'] = bool(updates['export_join_parts'])
     if 'export_part_count' in updates:

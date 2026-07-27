@@ -7,6 +7,10 @@
     <h1>Voice Studio &mdash; <em>{{ book.title }}</em></h1>
   </div>
 
+  {# MULTI_VOICE: a többszereplős narráció ki van kapcsolva (app.py:
+     MULTI_VOICE_NARRATION = False). Minden könyv egynarrátoros, ezért a
+     kapcsolónak nincs értelme a felületen. Visszakapcsoláskor vedd ki ezt
+     a kommentet.
   <div class="studio-narrator">
     <div class="studio-section-title">Narration mode</div>
     <div class="char-list">
@@ -27,6 +31,7 @@
       </div>
     </div>
   </div>
+  #}
 
   <div class="studio-narrator">
     <div class="studio-section-title">Narrator</div>
@@ -137,6 +142,7 @@
     </div>
   </div>
 
+  {# MULTI_VOICE: szereplőlista kikommentelve — az app egynarrátoros.
   <div class="studio-characters">
     <div class="studio-section-title">
       Characters <span id="char-count" class="muted"></span>
@@ -146,6 +152,7 @@
       <div class="loading-spinner">Detecting characters...</div>
     </div>
   </div>
+  #}
 </div>
 
 <audio id="preview-audio" style="display:none"></audio>

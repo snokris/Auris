@@ -72,6 +72,9 @@ def book_export_dir(book_title: str, author: str | None = None) -> str:
 DEFAULT_SEGMENT_PAUSE_SEC = 0.35
 DIALOGUE_TURN_PAUSE_SEC = 0.55
 ELLIPSIS_PAUSE_SEC = 1.5
+# A real paragraph boundary is where a human reader takes the biggest
+# in-chapter breath, so it earns a longer beat than any sentence gap.
+PARAGRAPH_PAUSE_SEC = 0.85
 # Silence inserted between two chapters when they are joined into one file.
 # Longer than any in-chapter pause so the chapter break stays audible.
 CHAPTER_BREAK_PAUSE_SEC = 2.0
@@ -106,7 +109,9 @@ def default_audio_options() -> dict:
         'pause_segment': DEFAULT_SEGMENT_PAUSE_SEC,
         'pause_dialogue': DIALOGUE_TURN_PAUSE_SEC,
         'pause_ellipsis': ELLIPSIS_PAUSE_SEC,
+        'pause_paragraph': PARAGRAPH_PAUSE_SEC,
         'pause_chapter': CHAPTER_BREAK_PAUSE_SEC,
+        'mastering': False,
     }
 
 
@@ -130,7 +135,9 @@ def audio_options(overrides: dict | None = None) -> dict:
         ('pause_segment', 'export_pause_segment'),
         ('pause_dialogue', 'export_pause_dialogue'),
         ('pause_ellipsis', 'export_pause_ellipsis'),
+        ('pause_paragraph', 'export_pause_paragraph'),
         ('pause_chapter', 'export_pause_chapter'),
+        ('mastering', 'audio_mastering'),
     ):
         if saved.get(saved_key) is not None:
             opts[key] = saved[saved_key]
@@ -148,8 +155,10 @@ def audio_options(overrides: dict | None = None) -> dict:
         ('pause_segment', DEFAULT_SEGMENT_PAUSE_SEC),
         ('pause_dialogue', DIALOGUE_TURN_PAUSE_SEC),
         ('pause_ellipsis', ELLIPSIS_PAUSE_SEC),
+        ('pause_paragraph', PARAGRAPH_PAUSE_SEC),
     ):
         opts[key] = _clamp_float(opts.get(key), fallback, 0.0, 5.0)
+    opts['mastering'] = bool(opts.get('mastering'))
     # A chapter break may legitimately be longer than an in-sentence pause.
     opts['pause_chapter'] = _clamp_float(
         opts.get('pause_chapter'), CHAPTER_BREAK_PAUSE_SEC, 0.0, 10.0)
@@ -189,6 +198,106 @@ def _ffmpeg_available() -> bool:
     return shutil.which('ffmpeg') is not None
 
 
+# ── Optional studio mastering ─────────────────────────────────────────────────
+#
+# Audiobook-style program loudness (EBU R128, two-pass loudnorm) plus a very
+# gentle EQ/compression polish. Compression narrows voice-to-voice level
+# differences without normalizing every sentence independently (which would
+# create audible pumping). linear=true keeps the duration untouched, so the
+# subtitle timeline built before mastering stays valid.
+
+MASTERING_TARGET_I = -19.0
+MASTERING_TARGET_LRA = 9.0
+MASTERING_TARGET_TP = -3.0
+
+_MASTERING_PRE_FILTERS = (
+    'highpass=f=55,'
+    'lowpass=f=16000,'
+    'equalizer=f=180:t=q:w=1:g=-1,'
+    'equalizer=f=3500:t=q:w=1:g=1,'
+    'acompressor=threshold=0.125:ratio=2.5:attack=20:release=250:'
+    'makeup=1.6:knee=2.8:detection=rms:link=average'
+)
+
+
+def _extract_loudnorm_measurements(stderr: str) -> dict:
+    matches = re.findall(
+        r'\{\s*"input_i".*?\}',
+        str(stderr or ''),
+        flags=re.DOTALL,
+    )
+    if not matches:
+        raise ValueError('FFmpeg did not return loudness measurements.')
+    import json as _json
+    measurements = _json.loads(matches[-1])
+    required = (
+        'input_i', 'input_lra', 'input_tp', 'input_thresh', 'target_offset',
+    )
+    for key in required:
+        value = str(measurements.get(key, '')).strip().lower()
+        if not value or value in {'-inf', 'inf', 'nan'}:
+            raise ValueError(f'Invalid FFmpeg loudness measurement: {key}')
+    return measurements
+
+
+def _master_wav(input_path: str, output_path: str) -> tuple[bool, str | None]:
+    """Apply gentle studio polish and two-pass EBU R128 loudness matching."""
+    if not _ffmpeg_available():
+        return False, 'FFmpeg is unavailable; studio mastering was skipped.'
+
+    loudnorm_base = (
+        f'loudnorm=I={MASTERING_TARGET_I}:LRA={MASTERING_TARGET_LRA}:'
+        f'TP={MASTERING_TARGET_TP}'
+    )
+    first = subprocess.run(
+        [
+            'ffmpeg', '-hide_banner', '-nostats', '-y',
+            '-i', input_path,
+            '-af', f'{_MASTERING_PRE_FILTERS},{loudnorm_base}:print_format=json',
+            '-f', 'null', os.devnull,
+        ],
+        capture_output=True, text=True, check=False,
+    )
+    if first.returncode != 0:
+        return False, (
+            'FFmpeg mastering analysis failed: '
+            + (first.stderr.strip().splitlines()[-1] if first.stderr else 'unknown error')
+        )
+
+    try:
+        measured = _extract_loudnorm_measurements(first.stderr)
+    except ValueError as exc:
+        return False, str(exc)
+
+    second_filter = (
+        f'{_MASTERING_PRE_FILTERS},{loudnorm_base}:'
+        f'measured_I={measured["input_i"]}:'
+        f'measured_LRA={measured["input_lra"]}:'
+        f'measured_TP={measured["input_tp"]}:'
+        f'measured_thresh={measured["input_thresh"]}:'
+        f'offset={measured["target_offset"]}:'
+        'linear=true:print_format=summary'
+    )
+    second = subprocess.run(
+        [
+            'ffmpeg', '-hide_banner', '-nostats', '-y',
+            '-i', input_path,
+            '-af', second_filter,
+            '-ar', str(SAMPLE_RATE),
+            '-ac', '1',
+            '-c:a', 'pcm_s16le',
+            output_path,
+        ],
+        capture_output=True, text=True, check=False,
+    )
+    if second.returncode != 0 or not os.path.isfile(output_path):
+        return False, (
+            'FFmpeg mastering pass failed: '
+            + (second.stderr.strip().splitlines()[-1] if second.stderr else 'unknown error')
+        )
+    return True, None
+
+
 def _mp3_encoder_args(opts: dict) -> list[str]:
     """ffmpeg arguments for the configured MP3 mode."""
     if opts['mp3_mode'] == 'cbr':
@@ -196,7 +305,21 @@ def _mp3_encoder_args(opts: dict) -> list[str]:
     return ['-c:a', 'libmp3lame', '-q:a', str(opts['mp3_vbr_quality'])]
 
 
-def encode_wav_file(wav_path: str, out_path: str, opts: dict | None = None) -> bool:
+def _clean_id3_tags(tags: dict | None) -> dict:
+    """Drop empty values so players never show blank ID3 fields."""
+    return {
+        str(key): str(value).strip()
+        for key, value in (tags or {}).items()
+        if str(value or '').strip()
+    }
+
+
+def encode_wav_file(
+    wav_path: str,
+    out_path: str,
+    opts: dict | None = None,
+    tags: dict | None = None,
+) -> bool:
     """Encode a WAV file to MP3 on disk, streaming through ffmpeg.
 
     Used for joined parts, which can be many hours long: unlike the pydub
@@ -207,6 +330,9 @@ def encode_wav_file(wav_path: str, out_path: str, opts: dict | None = None) -> b
     opts = opts or audio_options()
     cmd = ['ffmpeg', '-y', '-loglevel', 'error', '-i', wav_path]
     cmd += _mp3_encoder_args(opts)
+    for key, value in _clean_id3_tags(tags).items():
+        cmd += ['-metadata', f'{key}={value}']
+    cmd += ['-id3v2_version', '3']
     cmd += [out_path]
     try:
         result = subprocess.run(cmd, capture_output=True, text=True)
@@ -219,7 +345,11 @@ def encode_wav_file(wav_path: str, out_path: str, opts: dict | None = None) -> b
     return True
 
 
-def _wav_to_mp3_bytes(wav_path: str, opts: dict | None = None) -> bytes | None:
+def _wav_to_mp3_bytes(
+    wav_path: str,
+    opts: dict | None = None,
+    tags: dict | None = None,
+) -> bytes | None:
     """Encode the merged chapter WAV to MP3 with the configured settings.
 
     The source is 24 kHz mono speech, so the useful range is far below music
@@ -233,11 +363,14 @@ def _wav_to_mp3_bytes(wav_path: str, opts: dict | None = None) -> bytes | None:
         from pydub import AudioSegment
         seg = AudioSegment.from_wav(wav_path)
         buf = io.BytesIO()
+        clean_tags = _clean_id3_tags(tags) or None
         if opts['mp3_mode'] == 'cbr':
-            seg.export(buf, format='mp3', bitrate=f"{opts['mp3_bitrate']}k")
+            seg.export(buf, format='mp3', bitrate=f"{opts['mp3_bitrate']}k",
+                       tags=clean_tags)
         else:
             seg.export(buf, format='mp3',
-                       parameters=['-q:a', str(opts['mp3_vbr_quality'])])
+                       parameters=['-q:a', str(opts['mp3_vbr_quality'])],
+                       tags=clean_tags)
         return buf.getvalue()
     except Exception as e:
         log.warning(f'MP3 conversion failed: {e}')
@@ -353,6 +486,8 @@ def pause_after_segment(
     text = text.rstrip('"\'”’»').rstrip()
     if text.endswith(('...', '…')):
         return opts['pause_ellipsis']
+    if segment.get('ends_paragraph'):
+        return opts['pause_paragraph']
     if (
         next_segment
         and segment.get('is_dialogue')
@@ -422,11 +557,36 @@ def render_chapter_wav(
     timeline = build_timeline(segments, opts)
     merged = _merge_wavs(timeline, opts)
     wav_path = os.path.join(output_dir, f'{_safe_name(file_stem)}.wav')
-    sf.write(wav_path, merged, SAMPLE_RATE)
+
+    mastering_applied = False
+    mastering_warning = None
+    if opts.get('mastering'):
+        premaster_path = os.path.join(
+            output_dir, f'.{_safe_name(file_stem)}.premaster.wav')
+        sf.write(premaster_path, merged, SAMPLE_RATE)
+        try:
+            mastering_applied, mastering_warning = _master_wav(
+                premaster_path, wav_path)
+            if not mastering_applied:
+                # Fall back to the untouched render; the export must never
+                # fail because of an optional polish step.
+                if os.path.exists(wav_path):
+                    os.remove(wav_path)
+                os.replace(premaster_path, wav_path)
+                if mastering_warning:
+                    log.warning('Mastering skipped: %s', mastering_warning)
+        finally:
+            if os.path.exists(premaster_path):
+                os.remove(premaster_path)
+    else:
+        sf.write(wav_path, merged, SAMPLE_RATE)
+
     return {
         'wav_path': wav_path,
         'timeline': timeline,
         'duration_sec': len(merged) / SAMPLE_RATE,
+        'mastering_applied': mastering_applied,
+        'mastering_warning': mastering_warning,
     }
 
 
@@ -539,6 +699,8 @@ def export_joined_part(
     audio_fmt: str = 'mp3',
     sub_fmt: str = 'ass',
     opts: dict | None = None,
+    author: str | None = None,
+    part_number: int | None = None,
 ) -> dict:
     """Join already-rendered chapter WAVs into one audio file plus subtitles.
 
@@ -563,7 +725,13 @@ def export_joined_part(
     actual_fmt = 'wav'
     if audio_fmt == 'mp3':
         mp3_path = os.path.join(output_dir, f'{safe_stem}.mp3')
-        if encode_wav_file(wav_path, mp3_path, opts):
+        joined_tags = {
+            'title': file_stem,
+            'artist': author or '',
+            'album': book_title,
+            'track': str(part_number) if part_number is not None else '',
+        }
+        if encode_wav_file(wav_path, mp3_path, opts, tags=joined_tags):
             out_audio = mp3_path
             actual_fmt = 'mp3'
             os.remove(wav_path)
@@ -602,6 +770,7 @@ def export_single_chapter(
     file_stem: str | None = None,
     author: str | None = None,
     opts: dict | None = None,
+    track_number: int | None = None,
 ) -> dict:
     """Returns {'audio_path': ..., 'subtitle_path': ..., 'audio_fmt': ..., 'sub_fmt': ...}"""
     output_dir = output_dir or book_export_dir(book_title, author)
@@ -621,7 +790,12 @@ def export_single_chapter(
     out_audio = wav_path
     actual_fmt = 'wav'
     if audio_fmt == 'mp3':
-        mp3 = _wav_to_mp3_bytes(wav_path, opts)
+        mp3 = _wav_to_mp3_bytes(wav_path, opts, tags={
+            'title': chapter_title,
+            'artist': author or '',
+            'album': book_title,
+            'track': str(track_number) if track_number is not None else '',
+        })
         if mp3:
             out_audio = wav_path.replace('.wav', '.mp3')
             with open(out_audio, 'wb') as f:
@@ -640,7 +814,9 @@ def export_single_chapter(
         f.write(sub_content)
 
     return {'audio_path': out_audio, 'subtitle_path': sub_path,
-            'audio_fmt': actual_fmt, 'sub_fmt': sub_ext}
+            'audio_fmt': actual_fmt, 'sub_fmt': sub_ext,
+            'mastering_applied': rendered.get('mastering_applied', False),
+            'mastering_warning': rendered.get('mastering_warning')}
 
 
 def export_chapter_zip(

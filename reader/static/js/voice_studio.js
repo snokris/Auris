@@ -580,7 +580,10 @@ async function importVoicePreset(event) {
 document.querySelector('.preview-btn[data-char-id="narrator"]').onclick = previewNarrator;
 
 initNarratorControls();
-loadCharacters();
+// MULTI_VOICE: a többszereplős narráció ki van kapcsolva (app.py:
+// MULTI_VOICE_NARRATION = False), a szereplőszekció a sablonból is ki van
+// kommentelve — a lista betöltését ezért nem indítjuk.
+// loadCharacters();
 loadVoicePresets();
 
 window.saveChar = saveChar;

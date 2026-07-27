@@ -104,7 +104,7 @@
         <div class="export-section">
           <b>Subtitles</b>
           {% if not book.single_narrator_mode %}
-          <label><input type="radio" name="exp-sub" value="ass" checked> ASS (styled, per-character)</label>
+          <label><input type="radio" name="exp-sub" value="ass" checked> ASS (styled)</label>
           {% endif %}
           <label><input type="radio" name="exp-sub" value="srt"{% if book.single_narrator_mode %} checked{% endif %}> SRT (plain)</label>
         </div>

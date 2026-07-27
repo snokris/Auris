@@ -44,6 +44,7 @@ function _configuredPauseMs(key, fallback) {
 const DEFAULT_SEGMENT_PAUSE_MS = _configuredPauseMs('segment', 350);
 const DIALOGUE_TURN_PAUSE_MS = _configuredPauseMs('dialogue', 550);
 const ELLIPSIS_PAUSE_MS = _configuredPauseMs('ellipsis', 1500);
+const PARAGRAPH_PAUSE_MS = _configuredPauseMs('paragraph', 850);
 
 // Monotonic counter — incremented on every new playSegment and on stopPlayback.
 // Each playSegment captures its generation at entry; stale async continuations
@@ -69,6 +70,7 @@ function pauseAfterSegmentMs(segment, nextSegment = null) {
     .replace(/["'”’»]+\s*$/, '')
     .trimEnd();
   if (text.endsWith('...') || text.endsWith('…')) return ELLIPSIS_PAUSE_MS;
+  if (segment?.ends_paragraph) return PARAGRAPH_PAUSE_MS;
   if (segment?.is_dialogue && nextSegment?.is_dialogue) return DIALOGUE_TURN_PAUSE_MS;
   return DEFAULT_SEGMENT_PAUSE_MS;
 }

@@ -8,10 +8,15 @@ full stop.
 """
 
 import re
+import unicodedata
 
 _DOT = "<prd>"
 _ELLIPSIS = "<ell>"
 _SPLIT = "<split>"
+
+# Generative TTS becomes unstable on very long conditioning text: past this
+# length segments are split at clause (or, failing that, word) boundaries.
+MAX_TTS_SEGMENT_CHARS = 500
 _QUOTE_CLASS = r'["\u201c\u201d\u201e\u00ab\u00bb]'
 _QUOTE_CONTENT_CLASS = r'"\u201c\u201d\u201e\u00ab\u00bb'
 _NAME_PATTERN = r"[A-Z][A-Za-z'.-]+(?:\s+[A-Z][A-Za-z'.-]+){0,2}"
@@ -190,6 +195,86 @@ _INITIALISM_RE = re.compile(r"\b(?:[A-Z]\.){2,}")
 _NAME_INITIAL_RE = re.compile(r"\b[A-Z]\.(?=\s+[A-Z][a-z])")
 
 
+_CONTROL_CHARACTER_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+_CLAUSE_BOUNDARY_RE = re.compile(r"(?<=[,;:…、，：；])\s+")
+
+
+def _normalize_source_text(text: str) -> str:
+    """Remove invisible import artefacts without changing readable content.
+
+    BOM, zero-width and control characters, NBSP and replacement characters
+    survive EPUB/PDF extraction surprisingly often and make the TTS engines
+    mispronounce or glitch on otherwise clean sentences.
+    """
+    normalized = unicodedata.normalize("NFKC", str(text or ""))
+    normalized = normalized.replace("\r\n", "\n").replace("\r", "\n")
+    normalized = normalized.replace("\u00a0", " ").replace("\u200b", "")
+    normalized = normalized.replace("\ufeff", "").replace("\ufffd", "")
+    return _CONTROL_CHARACTER_RE.sub(" ", normalized)
+
+
+def _split_by_words(text: str, max_chars: int) -> list[str]:
+    pieces: list[str] = []
+    current = ""
+    for word in text.split():
+        if len(word) > max_chars:
+            if current:
+                pieces.append(current)
+                current = ""
+            pieces.extend(
+                word[index:index + max_chars]
+                for index in range(0, len(word), max_chars)
+            )
+            continue
+        candidate = f"{current} {word}".strip()
+        if len(candidate) <= max_chars:
+            current = candidate
+        else:
+            if current:
+                pieces.append(current)
+            current = word
+    if current:
+        pieces.append(current)
+    return pieces
+
+
+def _split_oversized_segment(
+    text: str,
+    max_chars: int = MAX_TTS_SEGMENT_CHARS,
+) -> list[str]:
+    """Keep generative TTS requests bounded, preferring natural clause breaks."""
+    cleaned = str(text or "").strip()
+    if len(cleaned) <= max_chars:
+        return [cleaned] if cleaned else []
+
+    clauses = [
+        clause.strip()
+        for clause in _CLAUSE_BOUNDARY_RE.split(cleaned)
+        if clause.strip()
+    ]
+    if len(clauses) <= 1:
+        return _split_by_words(cleaned, max_chars)
+
+    pieces: list[str] = []
+    current = ""
+    for clause in clauses:
+        if len(clause) > max_chars:
+            if current:
+                pieces.append(current)
+                current = ""
+            pieces.extend(_split_by_words(clause, max_chars))
+            continue
+        candidate = f"{current} {clause}".strip()
+        if len(candidate) <= max_chars:
+            current = candidate
+        else:
+            pieces.append(current)
+            current = clause
+    if current:
+        pieces.append(current)
+    return pieces
+
+
 def _scene_speed(text: str) -> float:
     action = len(_ACTION_WORDS.findall(text))
     slow = len(_SLOW_WORDS.findall(text))
@@ -319,8 +404,9 @@ def build_speaker_units(text: str) -> list[dict]:
     by ``enrich_chapter`` so stored unit indexes stay deterministic.
     """
     units: list[dict] = []
-    paragraphs = _split_paragraphs(text)
+    paragraphs = _split_paragraphs(_normalize_source_text(text))
     for paragraph in paragraphs:
+        paragraph_start = len(units)
         protected = _protect_sentence_boundaries(paragraph)
         protected = re.sub(
             r'([.!?\u2026]["\u201d\u00bb]?)\s+'
@@ -371,8 +457,11 @@ def build_speaker_units(text: str) -> list[dict]:
                                 "index": len(units),
                                 "text": piece_text.strip(),
                                 "dialogue_candidate": candidate,
+                                "ends_paragraph": False,
                             }
                         )
+        if len(units) > paragraph_start:
+            units[-1]["ends_paragraph"] = True
     return units
 
 
@@ -419,14 +508,31 @@ def _merge_paragraph_sentences(paragraph: str) -> list[str]:
             buffer = sentence
     if buffer:
         segments.append(buffer)
-    return segments
+    return [
+        piece
+        for segment in segments
+        for piece in _split_oversized_segment(segment)
+    ]
 
 
 def _split_sentences(text: str, chapter_title: str | None = None) -> list[str]:
-    segments: list[str] = []
+    return [unit["text"] for unit in _split_sentence_units(text, chapter_title)]
+
+
+def _split_sentence_units(
+    text: str,
+    chapter_title: str | None = None,
+) -> list[dict]:
+    """Sentence segments plus paragraph-boundary metadata."""
+    units: list[dict] = []
     for paragraph in _split_paragraphs(text, chapter_title):
-        segments.extend(_merge_paragraph_sentences(paragraph))
-    return segments
+        segments = _merge_paragraph_sentences(paragraph)
+        for index, segment in enumerate(segments):
+            units.append({
+                "text": segment,
+                "ends_paragraph": index == len(segments) - 1,
+            })
+    return units
 
 
 def _split_single_narrator_segments(
@@ -474,6 +580,27 @@ def _split_single_narrator_segments(
             output.append(buffer)
 
     return output
+
+
+def _split_single_narrator_units(
+    text: str,
+    chapter_title: str | None = None,
+    max_words: int = 60,
+) -> list[dict]:
+    """Single-narrator blocks plus paragraph-boundary metadata."""
+    units: list[dict] = []
+    for paragraph in _split_paragraphs(text, chapter_title):
+        blocks = _split_single_narrator_segments(
+            paragraph,
+            chapter_title=None,
+            max_words=max_words,
+        )
+        for index, block in enumerate(blocks):
+            units.append({
+                "text": block,
+                "ends_paragraph": index == len(blocks) - 1,
+            })
+    return units
 
 
 def _build_dialogue_map(text: str) -> dict[str, str]:
@@ -601,7 +728,7 @@ def enrich_chapter(
     """
     Return segment dicts used by playback and export.
     """
-    cleaned_text = str(chapter_text or "").strip()
+    cleaned_text = _normalize_source_text(chapter_text).strip()
     dialogue_map = _build_dialogue_map(cleaned_text)
     # Speaker annotations deliberately use fine-grained units so dialogue can
     # switch voices at exact boundaries. In single-narrator mode those
@@ -609,20 +736,22 @@ def enrich_chapter(
     # hundreds of tiny model jobs.
     if single_narrator_mode:
         speaker_annotations = None
-        sentences = _split_single_narrator_segments(
+        sentence_units = _split_single_narrator_units(
             cleaned_text,
             chapter_title=chapter_title,
         )
     elif speaker_annotations is None:
-        sentences = _split_sentences(cleaned_text, chapter_title=chapter_title)
+        sentence_units = _split_sentence_units(
+            cleaned_text, chapter_title=chapter_title
+        )
     else:
-        sentences = [unit["text"] for unit in build_speaker_units(cleaned_text)]
+        sentence_units = build_speaker_units(cleaned_text)
     scene_speed = _scene_speed(cleaned_text)
 
     segments = []
     last_speaker = None
-    for unit_index, sentence in enumerate(sentences):
-        sentence = sentence.strip()
+    for unit_index, unit in enumerate(sentence_units):
+        sentence = unit["text"].strip()
         if not sentence:
             continue
 
@@ -671,6 +800,7 @@ def enrich_chapter(
                 "speed": speed,
                 "is_dialogue": is_dialogue,
                 "is_whisper": is_whisper,
+                "ends_paragraph": bool(unit.get("ends_paragraph")),
             }
         )
 

@@ -1,6 +1,6 @@
 # Auris Studio — lokális hangoskönyvkészítő
 
-Teljesen **lokális, ingyenes hangoskönyvkészítő**: EPUB-, PDF- vagy TXT-könyvből felolvasott hangoskönyvet készít (MP3/WAV + felirat), internetkapcsolat és API-kulcsok nélkül. Kiemelt **magyar nyelvi támogatással** — automatikus nyelvfelismerés, magyar fejezetdetektálás, magyar számnévolvasás, párbeszédkezelés és hangklónozás magyar referenciahangból.
+Teljesen **lokális, ingyenes hangoskönyvkészítő**: EPUB-, PDF- vagy TXT-könyvből felolvasott hangoskönyvet készít (MP3/WAV + felirat), internetkapcsolat és API-kulcsok nélkül. A cél a **minél élethűbb, emberibb magyar felolvasás egyetlen narrátorhanggal** — automatikus nyelvfelismerés, magyar fejezetdetektálás, magyar számnévolvasás és hangklónozás magyar referenciahangból.
 
 Ez a repó a [mp3pintyo/Auris](https://github.com/mp3pintyo/Auris) forkja, amely maga is az eredeti [nikhilprasanth/Auris](https://github.com/nikhilprasanth/Auris) projektre épül. A származási lánc: az **eredeti Auris** (nikhilprasanth) adja az OmniVoice-alapú hangoskönyvolvasó alapot; **mp3pintyo forkja** egészítette ki a Higgs TTS 3 motorral és a kiterjedt magyar nyelvi támogatással; az **Auris Studio** pedig mindezt Apple Silicon-támogatással, hangminőség-javításokkal, magyar szövegkezeléssel és egy végigvitt exportfolyamattal bővíti. Windows- és Linux-telepítéshez a mp3pintyo-repó útmutatója az irányadó.
 
@@ -53,9 +53,17 @@ Első használatkor a Settings oldalon töltsd le az OmniVoice-modellt (~3 GB), 
 
 A TTS-motorok a Metal GPU-n futnak, nem CPU-n. Az OmniVoice float32-ben (a bfloat16 a mondatkezdeteket csípte le M-szérián), a Higgs a natív bfloat16-jában. Vészkapcsolók: `AURIS_STUDIO_MPS_DTYPE=bf16` (OmniVoice), `AURIS_STUDIO_HIGGS_MPS_DTYPE=fp32` (Higgs). Ez a rész PR-ként vissza is került az eredeti projektbe ([mp3pintyo/Auris#1](https://github.com/mp3pintyo/Auris/pull/1)).
 
+### Egy narrátorhang, élethűen
+
+Az Auris Studio teljes egészében **egynarrátoros felolvasásra** van hangolva: egyetlen, minél emberibb narrátorhang olvassa a teljes könyvet — leírásból tervezve vagy referencia-WAV-ból klónozva. A többszereplős narráció (karakterfelismerés, szereplőnkénti hangok) kódja megmaradt, de ki van kapcsolva; a kapcsoló az `app.py` `MULTI_VOICE_NARRATION` konstansa, a hozzá tartozó felületblokkok kikommentelve várakoznak (keresd: `MULTI_VOICE`).
+
 ### Hangminőség
 
 A Whisper-illesztett szegmensvágás szóidőbélyegek és dinamikus programozásos szóillesztés alapján jelöli ki az összevontan generált hang szegmenshatárait; a vágás a szavak közti szünetbe, nullátmenetre kerül, élsimítással. Ezzel megszűntek a lecsípett mondatvégek, az áthallott szófoszlányok és a határkattanások. A Settingsben választható a vágási mód (`Split coalesced audio` → Aligned) és az illesztéshez használt Whisper-modell (alap: whisper-small).
+
+### Természetes felolvasás
+
+A valódi bekezdésvégeken a narrátor nagyobbat lélegzik: külön, hosszabb szünet szól (alap 0,85 mp, a Settingsben állítható), a lejátszásban, az exportban és a feliratban egyformán. Import közben a szöveg megtisztul a láthatatlan szeméttől (BOM, zero-width és vezérlőkarakterek, hibás Unicode), ami kiejtési hibákat és generálási bicsaklásokat okozna; az 500 karakternél hosszabb szövegegységek pedig tagmondathatáron feldarabolódnak, így a nagyon hosszú mondatok sem instabilak. Opcionálisan bekapcsolható a stúdiómasztering: finom EQ + kompresszor és kétmenetes EBU R128 hangosságillesztés (−19 LUFS) fejezetenként — hangoskönyv-szabvány, egyenletes hangerő.
 
 ### Magyar szövegkezelés
 
@@ -79,11 +87,11 @@ exports/Dan_Brown_-_A_titkok_titka/
   Dan_Brown_-_A_titkok_titka_01_PROLÓGUS.srt
 ```
 
-Kérhető 1–4 összefűzött MP3 is a hozzájuk illeszkedő, újraidőzített felirattal. Az MP3-kódolás (VBR minőség vagy fix bitráta) és a beszédszünetek — mondatok, párbeszédfordulók, kihagyások és fejezetek között — a Settingsben állíthatók.
+Kérhető 1–4 összefűzött MP3 is a hozzájuk illeszkedő, újraidőzített felirattal. Az MP3-kódolás (VBR minőség vagy fix bitráta) és a beszédszünetek — mondatok, párbeszédfordulók, kihagyások, bekezdésvégek és fejezetek között — a Settingsben állíthatók. Minden MP3 ID3-címkéket kap: fejezetcím, szerző, könyvcím (album) és sorszám (track), így a fájlok a lejátszókban rendezetten jelennek meg.
 
 ### Hangcache és Voice Studio
 
-A Beállítások hangcache-kártyája mutatja a cache méretét, kitakarítja az árva szegmenseket, és könyv törlésekor automatikusan söpör. A Voice Studióban a könyv referenciahangja (WAV + átirat) névvel elmenthető, és bármely könyvre egy kattintással alkalmazható. Az egynarrátoros mód külön kártyán kapcsolható: bekapcsolva a narrátor olvas mindent, a karakterdetektálás kikapcsol és a felismert szereplők törlődnek; kikapcsolva a detektálás automatikusan újrafut. Az akcentusválasztó „None (natural)” és „Hungarian” opcióval bővült — magyar felolvasáshoz az akcentusjelölés nélküli leírás ajánlott.
+A Beállítások hangcache-kártyája mutatja a cache méretét, kitakarítja az árva szegmenseket, és könyv törlésekor automatikusan söpör. A Voice Studióban a könyv referenciahangja (WAV + átirat) névvel elmenthető, bármely könyvre egy kattintással alkalmazható, és egyetlen `.aurisvoice` fájlba exportálható, illetve onnan visszatölthető — így a hang biztonsági mentése és gépek közti átvitele is egy fájl. Az akcentusválasztó „None (natural)” és „Hungarian” opcióval bővült — magyar felolvasáshoz az akcentusjelölés nélküli leírás ajánlott.
 
 ## TTS-motorok
 
@@ -103,7 +111,8 @@ A Beállítások hangcache-kártyája mutatja a cache méretét, kitakarítja az
 - `Split coalesced audio` → Aligned (ajánlott)
 - `Alignment ASR model` → whisper-small (gyors) … whisper-large-v3-turbo (legpontosabb)
 - `MP3 mode` → VBR (a szegmensek közti csend így szinte semmibe nem kerül)
-- Magyar könyvekhez: egynarrátoros mód, vagy LLM-alapú karakterfelismerés lokális modellel (Ollama / LM Studio)
+- `Spoken Pauses` → a mondat-, párbeszéd-, kihagyás-, bekezdés- és fejezetszünet füllel hangolható
+- `Studio mastering` → kapcsold be, ha egyenletes, hangoskönyv-szabvány hangerőt szeretnél; hasonlítsd össze füllel
 
 ## Fejlesztés
 

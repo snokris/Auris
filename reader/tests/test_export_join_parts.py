@@ -190,7 +190,7 @@ class ExportJoinedPartTests(unittest.TestCase):
         part = [self._chapter('a', 0.3)]
         calls = []
 
-        def fake_encode(wav_path, out_path, opts=None):
+        def fake_encode(wav_path, out_path, opts=None, tags=None):
             calls.append((wav_path, out_path))
             with open(out_path, 'wb') as f:
                 f.write(b'ID3')

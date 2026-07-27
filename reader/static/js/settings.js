@@ -58,20 +58,23 @@ async function loadSettings() {
   toggleHiggsSource(higgsSrc);
   toggleHiggsPromptMode(_settings.higgs_prompt_mode || 'raw');
 
-  // Character / dialogue-speaker detection
-  const detectionMode = _settings.character_detection_mode || 'legacy';
-  document.getElementById('character-detection-mode').value = detectionMode;
-  document.getElementById('llm-base-url').value =
-    _settings.llm_base_url || 'http://127.0.0.1:1234/v1';
-  document.getElementById('llm-model').value = _settings.llm_model || '';
-  document.getElementById('llm-api-key').value = _settings.llm_api_key || '';
-  document.getElementById('llm-timeout-sec').value = _settings.llm_timeout_sec ?? 600;
-  document.getElementById('llm-max-characters').value = _settings.llm_max_characters ?? 60;
-  toggleCharacterDetection(detectionMode);
+  // MULTI_VOICE: a többszereplős narráció ki van kapcsolva (app.py:
+  // MULTI_VOICE_NARRATION = False) — a karakterfelismerés beállításai ki
+  // vannak kommentelve a settings.html-ből, ezért itt sem töltjük őket.
+  // const detectionMode = _settings.character_detection_mode || 'legacy';
+  // document.getElementById('character-detection-mode').value = detectionMode;
+  // document.getElementById('llm-base-url').value =
+  //   _settings.llm_base_url || 'http://127.0.0.1:1234/v1';
+  // document.getElementById('llm-model').value = _settings.llm_model || '';
+  // document.getElementById('llm-api-key').value = _settings.llm_api_key || '';
+  // document.getElementById('llm-timeout-sec').value = _settings.llm_timeout_sec ?? 600;
+  // document.getElementById('llm-max-characters').value = _settings.llm_max_characters ?? 60;
+  // toggleCharacterDetection(detectionMode);
 
   // Narrator
   document.getElementById('narrator-instruct').value = _settings.narrator_instruct || '';
-  document.getElementById('default-single-narrator-mode').checked = Boolean(_settings.single_narrator_mode);
+  // MULTI_VOICE: minden könyv egynarrátoros, a kapcsoló ki van kommentelve.
+  // document.getElementById('default-single-narrator-mode').checked = Boolean(_settings.single_narrator_mode);
 
   // TTS text processing (default true when unset)
   document.getElementById('normalize-text').checked = _settings.normalize_text !== false;
@@ -154,8 +157,12 @@ async function loadSettings() {
     _settings.export_pause_dialogue ?? PAUSE_DEFAULTS.dialogue;
   document.getElementById('pause-ellipsis').value =
     _settings.export_pause_ellipsis ?? PAUSE_DEFAULTS.ellipsis;
+  document.getElementById('pause-paragraph').value =
+    _settings.export_pause_paragraph ?? PAUSE_DEFAULTS.paragraph;
   document.getElementById('pause-chapter').value =
     _settings.export_pause_chapter ?? PAUSE_DEFAULTS.chapter;
+  const masteringBox = document.getElementById('audio-mastering');
+  if (masteringBox) masteringBox.checked = !!_settings.audio_mastering;
   const joinBox = document.getElementById('export-join-parts');
   if (joinBox) joinBox.checked = !!_settings.export_join_parts;
   const partCount = document.getElementById('export-part-count');
@@ -183,7 +190,8 @@ async function loadSettings() {
   document.getElementById('line-height').value = lh;
   document.getElementById('line-height-val').textContent = parseFloat(lh).toFixed(1);
 
-  checkSpacy();
+  // MULTI_VOICE: a spaCy csak a (kikapcsolt) karakterfelismeréshez kell.
+  // checkSpacy();
   checkExistingDownload();
   _settingsReady = true;
   setSettingsDirty(false);
@@ -504,14 +512,16 @@ async function saveSettings() {
     higgs_default_emotion: document.getElementById('higgs-default-emotion').value,
     higgs_default_style: document.getElementById('higgs-default-style').value,
     higgs_default_expressive: document.getElementById('higgs-default-expressive').value,
-    character_detection_mode: document.getElementById('character-detection-mode').value,
-    llm_base_url:      document.getElementById('llm-base-url').value.trim(),
-    llm_model:         document.getElementById('llm-model').value.trim(),
-    llm_api_key:       document.getElementById('llm-api-key').value,
-    llm_timeout_sec:   parseInt(document.getElementById('llm-timeout-sec').value, 10) || 600,
-    llm_max_characters: parseInt(document.getElementById('llm-max-characters').value, 10) || 60,
+    // MULTI_VOICE: a karakterfelismerési kulcsokat nem küldjük — a mentett
+    // értékek érintetlenül megmaradnak a settings.json-ban.
+    // character_detection_mode: document.getElementById('character-detection-mode').value,
+    // llm_base_url:      document.getElementById('llm-base-url').value.trim(),
+    // llm_model:         document.getElementById('llm-model').value.trim(),
+    // llm_api_key:       document.getElementById('llm-api-key').value,
+    // llm_timeout_sec:   parseInt(document.getElementById('llm-timeout-sec').value, 10) || 600,
+    // llm_max_characters: parseInt(document.getElementById('llm-max-characters').value, 10) || 60,
     narrator_instruct: document.getElementById('narrator-instruct').value.trim(),
-    single_narrator_mode: document.getElementById('default-single-narrator-mode').checked,
+    // single_narrator_mode: document.getElementById('default-single-narrator-mode').checked,
     normalize_text:    document.getElementById('normalize-text').checked,
     tts_num_step:      parseInt(document.getElementById('tts-num-step').value, 10) || 16,
     tts_batch_size:    parseInt(document.getElementById('tts-batch-size').value, 10) || 0,
@@ -531,7 +541,9 @@ async function saveSettings() {
     export_pause_segment:  _pauseValue('pause-segment', PAUSE_DEFAULTS.segment),
     export_pause_dialogue: _pauseValue('pause-dialogue', PAUSE_DEFAULTS.dialogue),
     export_pause_ellipsis: _pauseValue('pause-ellipsis', PAUSE_DEFAULTS.ellipsis),
+    export_pause_paragraph: _pauseValue('pause-paragraph', PAUSE_DEFAULTS.paragraph),
     export_pause_chapter:  _pauseValue('pause-chapter', PAUSE_DEFAULTS.chapter, 10),
+    audio_mastering:    document.getElementById('audio-mastering')?.checked || false,
     export_join_parts:  document.getElementById('export-join-parts')?.checked || false,
     export_part_count:  parseInt(
       document.getElementById('export-part-count')?.value || '1', 10
@@ -569,7 +581,7 @@ async function saveSettings() {
 // is only the fallback when the settings request has not landed yet.
 let _kbpsByVbrQuality = {0:96, 1:88, 2:80, 3:70, 4:62, 5:55, 6:50, 7:44, 8:43, 9:34};
 
-const PAUSE_DEFAULTS = { segment: 0.35, dialogue: 0.55, ellipsis: 1.5, chapter: 2.0 };
+const PAUSE_DEFAULTS = { segment: 0.35, dialogue: 0.55, ellipsis: 1.5, paragraph: 0.85, chapter: 2.0 };
 
 function currentMp3Kbps() {
   const mode = document.getElementById('mp3-mode')?.value || 'vbr';
@@ -636,6 +648,7 @@ function resetPauses() {
   document.getElementById('pause-segment').value  = PAUSE_DEFAULTS.segment;
   document.getElementById('pause-dialogue').value = PAUSE_DEFAULTS.dialogue;
   document.getElementById('pause-ellipsis').value = PAUSE_DEFAULTS.ellipsis;
+  document.getElementById('pause-paragraph').value = PAUSE_DEFAULTS.paragraph;
   document.getElementById('pause-chapter').value  = PAUSE_DEFAULTS.chapter;
 }
 

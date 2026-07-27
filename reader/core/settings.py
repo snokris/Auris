@@ -131,7 +131,13 @@ DEFAULTS: dict = {
     'export_pause_segment': 0.35,      # between ordinary sentences
     'export_pause_dialogue': 0.55,     # between two consecutive dialogue turns
     'export_pause_ellipsis': 1.5,      # after a trailing "..." / "…"
+    'export_pause_paragraph': 0.85,    # at a real paragraph boundary
     'export_pause_chapter': 2.0,       # between two chapters in a joined file
+
+    # Optional studio polish on exported chapters: gentle EQ + compression and
+    # two-pass EBU R128 loudness matching via ffmpeg. Off by default so the
+    # raw engine output stays comparable by ear.
+    'audio_mastering': False,
 
     # Joined output. When on, the export writes no per-chapter files at all:
     # once every chapter's audio exists it is concatenated into 1-4 files,
